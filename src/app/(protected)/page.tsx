@@ -14,7 +14,7 @@ import { useAssetsQuery } from "@/hooks/use-assets";
 import { useScenesQuery } from "@/hooks/use-scenes";
 import { useCreateJobMutation } from "@/hooks/use-jobs";
 import { useApi } from "@/hooks/use-api";
-import type { Asset, AssetType } from "@/types/dto";
+import type { Asset, AssetPage, AssetType } from "@/types/dto";
 import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -158,7 +158,8 @@ export default function GalleryPage() {
     }
   }
 
-  const { data: assetPage, isLoading, error } = assetsQuery;
+  const { data, isLoading, error } = assetsQuery;
+  const assetPage = data as AssetPage | undefined;
 
   const assets = assetPage?.items ?? [];
   const totalPages = useMemo(() => {

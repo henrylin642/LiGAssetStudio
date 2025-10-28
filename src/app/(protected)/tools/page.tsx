@@ -250,7 +250,7 @@ function sanitizeActionValues(values: InfoBallAction["values"]) {
 
 
 async function extractGlbMetadata(file: File) {
-  const { GLTFLoader } = await import("three/examples/jsm/loaders/GLTFLoader.js");
+  const { GLTFLoader } = (await import("three/examples/jsm/loaders/GLTFLoader.js")) as typeof import("three/examples/jsm/loaders/GLTFLoader.js");
   const arrayBuffer = await file.arrayBuffer();
   const loader = new GLTFLoader();
   const gltf = await new Promise<GltfScene>((resolve, reject) => {
@@ -868,7 +868,7 @@ export default function ToolsPage() {
             {uploadMutation.isError ? (
               <p className="text-xs text-red-600">{uploadMutation.error.message}</p>
             ) : null}
-            {uploadMutation.isLoading ? <p className="text-xs text-slate-500">上傳中…</p> : null}
+            {uploadMutation.isPending ? <p className="text-xs text-slate-500">上傳中…</p> : null}
           </div>
           <div className="max-h-56 overflow-auto rounded-md border border-slate-200 bg-slate-50">
             <table className="min-w-full text-left text-xs">
@@ -900,7 +900,7 @@ export default function ToolsPage() {
                         size="icon"
                         className="text-red-600 hover:text-red-700"
                         onClick={() => deleteMutation.mutate(upload.id)}
-                        disabled={deleteMutation.isLoading}
+                        disabled={deleteMutation.isPending}
                       >
                         <Trash2 className="h-4 w-4" />
                       </Button>
