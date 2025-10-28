@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const LIG_BASE_URL = process.env.LIG_BASE_URL ?? "https://lab.lig.com.tw";
+const DEFAULT_LIG_BASE_URL = "https://lab.lig.com.tw";
+const LIG_BASE_URL = (process.env.LIG_BASE_URL ?? DEFAULT_LIG_BASE_URL).trim().replace(/\/+$/, "");
 
 type UpstreamLoginResponse = {
   token?: string;

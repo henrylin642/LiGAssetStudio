@@ -29,7 +29,7 @@ export function InfoBallPreview({ config, photos, zoom = 1, onZoomChange }: Info
     if (!container) return;
 
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0xf5f5f5);
+    scene.background = new THREE.Color(0x000000);
 
     const width = container.clientWidth || 640;
     const height = container.clientHeight || 360;
@@ -193,5 +193,5 @@ export function InfoBallPreview({ config, photos, zoom = 1, onZoomChange }: Info
     };
   }, [onZoomChange, zoom]);
 
-  return <div ref={containerRef} className="h-80 w-full overflow-hidden rounded-lg border border-slate-200 bg-slate-50" />;
+  return <div ref={containerRef} className="h-80 w-full overflow-hidden rounded-lg border border-slate-200 bg-black" />;
 }

@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 
 const DEFAULT_LIG_BASE_URL = "https://api.lig.com.tw";
 
-const LIG_BASE_URL = process.env.LIG_BASE_URL ?? DEFAULT_LIG_BASE_URL;
+const LIG_BASE_URL = (process.env.LIG_BASE_URL ?? DEFAULT_LIG_BASE_URL).trim().replace(/\/+$/, "");
 
 export function extractBearerToken(request: NextRequest) {
   const authHeader = request.headers.get("authorization");
@@ -17,7 +17,8 @@ export async function ligFetch(path: string, init: RequestInit = {}, token?: str
   if (token) {
     headers.set("Authorization", `Bearer ${token}`);
   }
-  const url = `${LIG_BASE_URL}${path.startsWith("/") ? path : `/${path}`}`;
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  const url = `${LIG_BASE_URL}${normalizedPath}`;
   return fetch(url, {
     ...init,
     headers,
