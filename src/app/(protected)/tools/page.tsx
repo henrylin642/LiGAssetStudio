@@ -388,7 +388,7 @@ export default function ToolsPage() {
   const [infoBallFaceWidth, setInfoBallFaceWidth] = useState(0.5);
   const [infoBallFaceGap, setInfoBallFaceGap] = useState(0.1);
   const [infoBallSpeed, setInfoBallSpeed] = useState(30);
-  const [infoBallFloorAngles, setInfoBallFloorAngles] = useState<number[]>([37, 0, -37]);
+  const [infoBallFloorAngles, setInfoBallFloorAngles] = useState<number[]>([-37, 0, 37]);
   const [infoBallFaceGapList, setInfoBallFaceGapList] = useState<number[]>([0.1, 0.3, 0.1]);
   const [infoBallPhotos, setInfoBallPhotos] = useState<string[]>(Array(18).fill(""));
   const [infoBallPhotoSelections, setInfoBallPhotoSelections] = useState<InfoBallPhotoSelection[]>(
