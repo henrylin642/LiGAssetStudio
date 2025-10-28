@@ -184,16 +184,16 @@ export function Preview3D({ src, poster, variant = "grid" }: Preview3DProps) {
   if (!ready) {
     const baseClass =
       variant === "detail"
-        ? "flex w-full items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-sm text-slate-500"
-        : "flex aspect-square items-center justify-center rounded-md border border-slate-200 bg-slate-50 text-xs text-slate-500";
+        ? "flex w-full items-center justify-center rounded-xl border border-slate-200 bg-black text-sm text-slate-200"
+        : "flex aspect-square items-center justify-center rounded-md border border-slate-200 bg-black text-xs text-slate-200";
 
     return <div className={baseClass}>Loading 3D preview...</div>;
   }
 
   const containerClass =
     variant === "detail"
-      ? "relative flex w-full items-center justify-center overflow-hidden rounded-xl border border-slate-200 bg-slate-50"
-      : "relative flex aspect-square items-center justify-center overflow-hidden rounded-md border border-slate-200 bg-slate-50";
+      ? "relative flex w-full items-center justify-center overflow-hidden rounded-xl border border-slate-200 bg-black"
+      : "relative flex aspect-square items-center justify-center overflow-hidden rounded-md border border-slate-200 bg-black";
 
   const detailStyle =
     variant === "detail"

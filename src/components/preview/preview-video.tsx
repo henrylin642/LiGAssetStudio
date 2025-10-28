@@ -7,7 +7,7 @@ interface PreviewVideoProps {
 
 export function PreviewVideo({ src, poster }: PreviewVideoProps) {
   return (
-    <div className="flex aspect-video items-center justify-center overflow-hidden rounded-md border border-slate-200 bg-slate-50">
+    <div className="flex aspect-video items-center justify-center overflow-hidden rounded-md border border-slate-200 bg-black">
       <video
         controls
         muted
@@ -21,4 +21,3 @@ export function PreviewVideo({ src, poster }: PreviewVideoProps) {
     </div>
   );
 }
-

@@ -23,8 +23,8 @@ export function PreviewImage({
 
   const containerClass =
     variant === "detail"
-      ? "flex w-full items-center justify-center overflow-hidden rounded-xl border border-slate-200 bg-slate-50 p-4"
-      : "flex aspect-square items-center justify-center overflow-hidden rounded-md border border-slate-200 bg-slate-50";
+      ? "flex w-full items-center justify-center overflow-hidden rounded-xl border border-slate-200 bg-black p-4"
+      : "flex aspect-square items-center justify-center overflow-hidden rounded-md border border-slate-200 bg-black";
 
   const imageStyle = useMemo(() => {
     if (variant !== "detail") {
@@ -73,7 +73,7 @@ export function PreviewImage({
         className={imageClass}
         style={imageStyle}
         loading="lazy"
-      onLoad={(event) => {
+        onLoad={(event) => {
           const { naturalWidth, naturalHeight } = event.currentTarget;
           if (naturalWidth > 0 && naturalHeight > 0) {
             if (variant === "detail") {
