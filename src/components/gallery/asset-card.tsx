@@ -20,19 +20,42 @@ interface AssetCardProps {
 }
 
 function renderPreview(asset: Asset) {
+  const overlayClass =
+    "absolute inset-0 pointer-events-none rounded-md border border-slate-900/20";
+
   if (asset.type === "image") {
-    return <PreviewImage src={asset.previewUrl ?? asset.url} alt={asset.name} variant="grid" />;
+    return (
+      <div className="relative">
+        <PreviewImage src={asset.previewUrl ?? asset.url} alt={asset.name} variant="grid" />
+        <div className={`${overlayClass} bg-[radial-gradient(circle,_rgba(255,255,255,0.35)_0%,_rgba(15,23,42,0.25)_100%)] mix-blend-multiply`} />
+      </div>
+    );
   }
 
   if (asset.type === "video") {
-    return <PreviewVideo src={asset.url} poster={asset.previewUrl} />;
+    return (
+      <div className="relative">
+        <PreviewVideo src={asset.url} poster={asset.previewUrl} />
+        <div className={`${overlayClass} bg-gradient-to-br from-white/25 via-transparent to-slate-900/20`} />
+      </div>
+    );
   }
 
   if (asset.type === "audio") {
-    return <PreviewAudio src={asset.url} />;
+    return (
+      <div className="relative">
+        <PreviewAudio src={asset.url} />
+        <div className={`${overlayClass} bg-[radial-gradient(circle,_rgba(241,245,249,0.45)_0%,_rgba(15,23,42,0.2)_100%)]`} />
+      </div>
+    );
   }
 
-  return <Preview3D src={asset.url} poster={asset.previewUrl} />;
+  return (
+    <div className="relative">
+      <Preview3D src={asset.url} poster={asset.previewUrl} />
+      <div className={`${overlayClass} bg-gradient-to-tr from-white/35 via-transparent to-slate-900/20`} />
+    </div>
+  );
 }
 
 export function AssetCard({ asset, selected, onSelectChange, detailHref, onUploadToScene }: AssetCardProps) {
