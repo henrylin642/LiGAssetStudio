@@ -6,7 +6,7 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useAssetsQuery } from "@/hooks/use-assets";
-import type { Asset } from "@/types/dto";
+import type { Asset, AssetPage } from "@/types/dto";
 import { PreviewImage } from "@/components/preview/preview-image";
 import { cn, formatBytes } from "@/lib/utils";
 
@@ -40,12 +40,13 @@ export function GalleryAssetPicker({
     type: "image",
   });
 
-  const assets = assetsQuery.data?.items ?? [];
+  const assetPage = assetsQuery.data as AssetPage | undefined;
+  const assets = assetPage?.items ?? [];
 
   const totalPages = useMemo(() => {
-    if (!assetsQuery.data) return 1;
-    return Math.max(1, Math.ceil(assetsQuery.data.total / assetsQuery.data.pageSize));
-  }, [assetsQuery.data]);
+    if (!assetPage) return 1;
+    return Math.max(1, Math.ceil(assetPage.total / assetPage.pageSize));
+  }, [assetPage]);
 
   const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();

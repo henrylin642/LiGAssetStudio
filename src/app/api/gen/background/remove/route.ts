@@ -72,7 +72,13 @@ export async function POST(request: NextRequest) {
 
     await fs.rm(tmpDir, { recursive: true, force: true });
 
-    return new NextResponse(outputBuffer, {
+    if (!outputBuffer) {
+      throw new Error("Background removal did not produce any output");
+    }
+
+    const body = new Uint8Array(outputBuffer);
+
+    return new NextResponse(body, {
       status: 200,
       headers: {
         "Content-Type": "image/png",

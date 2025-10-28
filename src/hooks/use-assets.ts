@@ -28,6 +28,6 @@ export function useAssetsQuery(params: UseAssetsParams) {
       }
       return (await response.json()) as AssetPage;
     },
-    keepPreviousData: true,
+    placeholderData: (previousData) => previousData,
   });
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 
 type ModelViewerElement = HTMLElement & {
@@ -17,7 +17,6 @@ type ModelViewerElement = HTMLElement & {
   "auto-rotate"?: boolean;
   "camera-controls"?: boolean;
   "ar"?: boolean;
-  "poster"?: string;
   "camera-orbit"?: string;
   "field-of-view"?: string;
   "animation-loop"?: boolean;
@@ -44,8 +43,8 @@ export function Preview3D({ src, poster, variant = "grid" }: Preview3DProps) {
   const assignViewerRef = useCallback((node: ModelViewerElement | null) => {
     viewerRef.current = node;
   }, []);
-  const initialOrbit = useRef<{ theta: number; phi: number; radius: number }>();
-  const initialFov = useRef<number>();
+  const initialOrbit = useRef<{ theta: number; phi: number; radius: number } | null>(null);
+  const initialFov = useRef<number | null>(null);
   const animationNames = useRef<string[]>([]);
   const animationIndexRef = useRef<number>(0);
 
@@ -78,7 +77,7 @@ export function Preview3D({ src, poster, variant = "grid" }: Preview3DProps) {
         }
         if (typeof viewer.getFieldOfView === "function") {
           const fov = viewer.getFieldOfView();
-          initialFov.current = fov?.deg;
+          initialFov.current = typeof fov?.deg === "number" ? fov.deg : null;
         }
         try {
           const names = (viewer.availableAnimations ?? []).filter(Boolean);
@@ -139,7 +138,7 @@ export function Preview3D({ src, poster, variant = "grid" }: Preview3DProps) {
       viewer.cameraOrbit = `${orbit.theta}rad ${orbit.phi}rad ${orbit.radius}m`;
     }
     const fov = initialFov.current;
-    if (Number.isFinite(fov)) {
+    if (typeof fov === "number" && Number.isFinite(fov)) {
       viewer.fieldOfView = `${fov}deg`;
     }
     viewer.jumpCameraToGoal?.();
@@ -201,27 +200,29 @@ export function Preview3D({ src, poster, variant = "grid" }: Preview3DProps) {
       ? { minHeight: `${DETAIL_MIN_HEIGHT}px`, height: `min(70vh, ${DETAIL_MAX_HEIGHT}px)` }
       : undefined;
 
+  const viewerElement = React.createElement("model-viewer", {
+    ref: assignViewerRef as unknown as React.RefCallback<Element>,
+    style: {
+      width: "100%",
+      height: "100%",
+    },
+    src,
+    poster,
+    "camera-controls": true,
+    "touch-action": "none",
+    "interaction-prompt": "auto",
+    "shadow-intensity": "1.2",
+    "environment-image": "neutral",
+    exposure: "1.1",
+    autoplay: true,
+    "animation-loop": true,
+    "animation-crossfade-duration": "400",
+    ar: true,
+  } as Record<string, unknown>);
+
   return (
     <div className={containerClass} style={detailStyle}>
-      <model-viewer
-        ref={assignViewerRef as unknown as React.RefCallback<Element>}
-        style={{
-          width: "100%",
-          height: "100%",
-        }}
-        src={src}
-        poster={poster}
-        camera-controls
-        touch-action="none"
-        interaction-prompt="auto"
-        shadow-intensity="1.2"
-        environment-image="neutral"
-        exposure="1.1"
-        autoplay
-        animation-loop
-        animation-crossfade-duration="400"
-        ar
-      />
+      {viewerElement}
       {controls}
     </div>
   );

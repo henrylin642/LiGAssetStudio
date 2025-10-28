@@ -15,7 +15,6 @@ type UpstreamLoginResponse = {
 };
 
 function extractToken(json: UpstreamLoginResponse | undefined, headers: Headers) {
-  if (!json && headers.size === 0) return null;
   const tokenFromBody = json?.token ?? json?.jwt ?? json?.access_token;
   if (typeof tokenFromBody === "string" && tokenFromBody.length > 0) {
     return tokenFromBody;
