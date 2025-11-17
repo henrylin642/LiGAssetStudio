@@ -495,7 +495,7 @@ export function SceneViewer({ objects, mediaMeasurements, onMediaDimensionsChang
       }
     };
 
-    const addGlbObject = (object: ArObject, assetUrl: string) => {
+    const addGlbObject = (object: ArObject, assetUrl: string, objectKey: string | undefined, dimensionHint: DimensionHint) => {
       const location = getSafeLocation(object);
       const zoom = getSafeZoom(object);
         gltfLoader.load(
@@ -519,7 +519,7 @@ export function SceneViewer({ objects, mediaMeasurements, onMediaDimensionsChang
         },
         undefined,
         () => {
-          addPlaneObject(object);
+          addPlaneObject(object, objectKey, dimensionHint, assetUrl);
         },
       );
     };
@@ -610,7 +610,7 @@ export function SceneViewer({ objects, mediaMeasurements, onMediaDimensionsChang
 
       const assetUrl = getPrimaryAssetUrl(object);
       if (isGlbLike(assetUrl)) {
-        addGlbObject(object, assetUrl as string);
+        addGlbObject(object, assetUrl as string, objectKey, dimensionHint);
       } else {
         addPlaneObject(object, objectKey, dimensionHint, assetUrl);
       }
