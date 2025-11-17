@@ -173,8 +173,10 @@ function getMediaDimensions(texture?: THREE.Texture | null, hint?: DimensionHint
     height = Number(hint?.height);
   }
 
-  const safeWidth = Number.isFinite(width) && width > 0 ? Number(width) : 1;
-  const safeHeight = Number.isFinite(height) && height > 0 ? Number(height) : 1;
+  const numericWidth = Number(width);
+  const numericHeight = Number(height);
+  const safeWidth = Number.isFinite(numericWidth) && numericWidth > 0 ? numericWidth : 1;
+  const safeHeight = Number.isFinite(numericHeight) && numericHeight > 0 ? numericHeight : 1;
   return { width: safeWidth, height: safeHeight };
 }
 
