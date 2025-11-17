@@ -24,6 +24,67 @@ export interface Scene {
   description?: string;
 }
 
+export interface ArObjectLocation {
+  x: number;
+  y: number;
+  z: number;
+  rotate_x: number;
+  rotate_y: number;
+  rotate_z: number;
+}
+
+export interface ArObjectZoom {
+  x: number;
+  y: number;
+  z: number;
+}
+
+export interface ArObjectTexture {
+  id?: string;
+  url?: string;
+  width?: number;
+  height?: number;
+  photos?: string[];
+  meta?: {
+    width?: number;
+    height?: number;
+    image?: {
+      width?: number;
+      height?: number;
+    };
+    video?: {
+      width?: number;
+      height?: number;
+    };
+    [key: string]: unknown;
+  };
+}
+
+export interface ArObjectModel {
+  type?: number;
+  fields?: Record<string, unknown>;
+  texture?: ArObjectTexture | null;
+  ios_texture?: ArObjectTexture | null;
+  android_texture?: ArObjectTexture | null;
+  sub_events?: unknown;
+}
+
+export interface ArObject {
+  id: number;
+  name?: string;
+  scene_id?: number;
+  transparency?: number | null;
+  group?: number | null;
+  location?: Partial<ArObjectLocation> | null;
+  zoom?: Partial<ArObjectZoom> | null;
+  model?: ArObjectModel | null;
+  actions?: unknown;
+  events?: unknown;
+  sub_events?: unknown;
+  created_at?: string;
+  updated_at?: string;
+}
+
 export interface UploadedAsset {
   id: string;
   name: string;

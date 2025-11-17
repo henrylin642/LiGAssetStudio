@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -122,6 +122,61 @@ type InfoBallEvent = {
   id: number;
   values: Record<string, unknown>;
   actions: InfoBallAction[];
+};
+
+type InfoBallSubEventMap = Record<string, InfoBallEvent[]>;
+
+type InfoBallFieldsPayload = {
+  is_child?: boolean;
+  is_hidden?: boolean;
+  is_allow_pinch?: boolean;
+  floor_count?: number;
+  floor_height?: number;
+  floor_gap?: number;
+  face_width?: number;
+  face_count?: number;
+  face_gap?: number;
+  speed?: number;
+  is_occlusion?: boolean;
+  floor_angles?: number[];
+  face_gap_list?: number[];
+};
+
+type InfoBallLocation = {
+  x: number;
+  y: number;
+  z: number;
+  rotate_x: number;
+  rotate_y: number;
+  rotate_z: number;
+};
+
+type InfoBallZoom = {
+  x: number;
+  y: number;
+  z: number;
+};
+
+type RemoteInfoBallResponse = {
+  id: number;
+  name?: string;
+  scene_id?: number;
+  transparency?: number | null;
+  group?: number | null;
+  location?: Partial<InfoBallLocation>;
+  zoom?: Partial<InfoBallZoom>;
+  model?: {
+    type?: number;
+    fields?: InfoBallFieldsPayload;
+    texture?: {
+      photos?: string[];
+    } | null;
+    ios_texture?: unknown;
+    android_texture?: unknown;
+    sub_events?: InfoBallSubEventMap;
+  } | null;
+  events?: unknown;
+  sub_events?: InfoBallSubEventMap;
 };
 
 const EVENT_OPTIONS: Array<{ value: number; label: string }> = [
@@ -246,6 +301,107 @@ function sanitizeActionValues(values: InfoBallAction["values"]) {
     acc[key] = rawValue as string | number | boolean | null;
     return acc;
   }, {});
+}
+
+function createDefaultSubEvents(prefix: string, count: number): InfoBallSubEventMap {
+  const safePrefix = prefix.trim();
+  const total = Math.max(count, 6);
+  const map: InfoBallSubEventMap = {};
+  for (let index = 1; index <= total; index += 1) {
+    const key = safePrefix ? `${safePrefix}_${index}` : `face_${index}`;
+    map[key] = [
+      {
+        id: DEFAULT_EVENT_ID,
+        values: {},
+        actions: [],
+      },
+    ];
+  }
+  return map;
+}
+
+function formatSubEventScalarValue(value: unknown): string {
+  if (value === null || value === undefined) {
+    return "";
+  }
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) {
+      return "";
+    }
+    return String(value);
+  }
+  if (typeof value === "boolean") {
+    return value ? "true" : "false";
+  }
+  return String(value);
+}
+
+function formatValuesBlockForSubEvents(values: Record<string, unknown> | undefined, indent: string): string[] {
+  const entries = Object.entries(values ?? {}).filter(([, val]) => val !== undefined);
+  if (entries.length === 0) {
+    return [`${indent}values: {}`];
+  }
+  const lines = [`${indent}values:`];
+  entries
+    .sort(([a], [b]) => a.localeCompare(b, undefined, { numeric: true }))
+    .forEach(([key, rawValue]) => {
+      const safeValue = formatSubEventScalarValue(rawValue);
+      if (safeValue) {
+        lines.push(`${indent}  ${key}: ${safeValue}`);
+      } else {
+        lines.push(`${indent}  ${key}:`);
+      }
+    });
+  return lines;
+}
+
+function formatSubEventsForAdmin(map: InfoBallSubEventMap | undefined): string {
+  if (!map) {
+    return "";
+  }
+  const entries = Object.entries(map);
+  if (entries.length === 0) {
+    return "";
+  }
+
+  const lines: string[] = [];
+  entries
+    .sort(([a], [b]) => a.localeCompare(b, undefined, { numeric: true }))
+    .forEach(([key, events], index) => {
+      const quotedKey = `'${key.replace(/'/g, "''")}'`;
+      lines.push(`${quotedKey}:`);
+      if (!events || events.length === 0) {
+        lines.push("- {}");
+        if (index < entries.length - 1) {
+          lines.push("");
+        }
+        return;
+      }
+
+      events.forEach((eventConfig, eventIndex) => {
+        lines.push(`- id: ${eventConfig?.id ?? ""}`);
+        lines.push(...formatValuesBlockForSubEvents(eventConfig?.values ?? {}, "  "));
+        const actions = eventConfig?.actions ?? [];
+        if (actions.length === 0) {
+          lines.push("  actions: []");
+        } else {
+          lines.push("  actions:");
+          actions.forEach((action) => {
+            lines.push(`  - id: ${action?.id ?? ""}`);
+            lines.push(...formatValuesBlockForSubEvents(action?.values ?? {}, "    "));
+          });
+        }
+        if (eventIndex < events.length - 1) {
+          lines.push("");
+        }
+      });
+
+      if (index < entries.length - 1) {
+        lines.push("");
+      }
+    });
+
+  return lines.join("\n");
 }
 
 
@@ -402,6 +558,25 @@ export default function ToolsPage() {
     Array.from({ length: infoBallPhotosCount }, () => createDefaultFaceEvent()),
   );
   const [infoBallSubEventPrefix, setInfoBallSubEventPrefix] = useState("");
+  const [infoBallSceneId, setInfoBallSceneId] = useState<number>();
+  const [infoBallObjectName, setInfoBallObjectName] = useState("資訊球 1.0");
+  const [infoBallObjectIdInput, setInfoBallObjectIdInput] = useState("");
+  const [infoBallObjectId, setInfoBallObjectId] = useState<number | null>(null);
+  const [infoBallLocation, setInfoBallLocation] = useState<InfoBallLocation>({
+    x: 0,
+    y: 0,
+    z: 0,
+    rotate_x: 0,
+    rotate_y: 0,
+    rotate_z: 0,
+  });
+  const [infoBallZoom, setInfoBallZoom] = useState<InfoBallZoom>({ x: 1, y: 1, z: 1 });
+  const [infoBallTransparency, setInfoBallTransparency] = useState(1);
+  const [infoBallGroup, setInfoBallGroup] = useState<number | null>(null);
+  const [infoBallSaving, setInfoBallSaving] = useState(false);
+  const [infoBallLoading, setInfoBallLoading] = useState(false);
+  const [infoBallStatusMessage, setInfoBallStatusMessage] = useState<string | null>(null);
+  const [infoBallStatusError, setInfoBallStatusError] = useState<string | null>(null);
   const deleteMutation = useMutation<{ ok: boolean }, Error, string>({
     mutationFn: async (id) => {
       const response = await fetch(`/api/tools/uploads?id=${id}`, { method: "DELETE" });
@@ -482,6 +657,12 @@ export default function ToolsPage() {
   useEffect(() => {
     setFfmpeg((prev) => ({ ...prev, audioBitrateKbps: audioBitrateKbps }));
   }, [audioBitrateKbps]);
+
+  useEffect(() => {
+    if (!infoBallSceneId && scenesQuery.data && scenesQuery.data.length > 0) {
+      setInfoBallSceneId(scenesQuery.data[0].id);
+    }
+  }, [infoBallSceneId, scenesQuery.data]);
 
   async function handleFileChange(event: React.ChangeEvent<HTMLInputElement>) {
     const files = event.target.files;
@@ -589,7 +770,7 @@ export default function ToolsPage() {
     };
   }, [ffmpegRateStrategy, videoDurationSeconds, targetSizeMb, audioBitrateKbps]);
 
-  const infoBallSubEvents = useMemo(() => {
+  const infoBallSubEvents = useMemo<InfoBallSubEventMap>(() => {
     const prefix = infoBallSubEventPrefix.trim();
     const map: Record<string, InfoBallEvent[]> = {};
 
@@ -600,9 +781,7 @@ export default function ToolsPage() {
           id: action.id,
           values: sanitizeActionValues(action.values ?? {}),
         }))
-        .filter((action) => action.id && Object.keys(action.values ?? {}).length > 0);
-
-      if (serializedActions.length === 0) return;
+        .filter((action) => Boolean(action.id));
 
       const key = prefix ? `${prefix}_${index + 1}` : `face_${index + 1}`;
       map[key] = [
@@ -614,8 +793,13 @@ export default function ToolsPage() {
       ];
     });
 
+    if (Object.keys(map).length === 0) {
+      const defaultPrefix = prefix || (infoBallObjectId ? String(infoBallObjectId) : "");
+      return createDefaultSubEvents(defaultPrefix, infoBallPhotosCount);
+    }
+
     return map;
-  }, [infoBallFaceInteractions, infoBallSubEventPrefix]);
+  }, [infoBallFaceInteractions, infoBallSubEventPrefix, infoBallObjectId, infoBallPhotosCount]);
 
   const infoBallModel = useMemo(() => {
     const floorAngles = Array.from({ length: infoBallFloorCount }, (_, index) =>
@@ -643,7 +827,7 @@ export default function ToolsPage() {
         floor_angles: floorAngles,
         face_gap_list: faceGapList,
         prefixes: ["api/v1/ar_objects", "api/ar_objects", "api/base", "application"],
-        template: "ar_objects_from_scene",
+        template: "show",
         layout: {},
       },
       texture: {
@@ -651,10 +835,8 @@ export default function ToolsPage() {
       },
       ios_texture: null,
       android_texture: null,
-      sub_events: infoBallSubEvents,
     };
   }, [
-    infoBallSubEvents,
     infoBallAllowPinch,
     infoBallFaceCount,
     infoBallFaceGap,
@@ -672,8 +854,6 @@ export default function ToolsPage() {
     infoBallSpeed,
   ]);
 
-  const infoBallJsonString = useMemo(() => JSON.stringify(infoBallModel, null, 2), [infoBallModel]);
-
   const layerOrder = useMemo(
     () => Array.from({ length: infoBallFloorCount }, (_, index) => index),
     [infoBallFloorCount],
@@ -690,6 +870,254 @@ export default function ToolsPage() {
       await navigator.clipboard.writeText(infoBallJsonString);
     } catch (error) {
       console.error("Failed to copy InfoBall JSON", error);
+    }
+  };
+
+  const handleCopyInfoBallSubEvents = async () => {
+    try {
+      await navigator.clipboard.writeText(infoBallSubEventsAdminString);
+    } catch (error) {
+      console.error("Failed to copy InfoBall sub events", error);
+    }
+  };
+
+  const handleLocationInputChange = (key: keyof InfoBallLocation, rawValue: string) => {
+    const parsed = Number(rawValue);
+    setInfoBallLocation((prev) => ({ ...prev, [key]: Number.isNaN(parsed) ? 0 : parsed }));
+  };
+
+  const handleZoomInputChange = (key: keyof InfoBallZoom, rawValue: string) => {
+    const parsed = Number(rawValue);
+    setInfoBallZoom((prev) => ({ ...prev, [key]: Number.isNaN(parsed) ? 0 : parsed }));
+  };
+
+  const buildInfoBallRequestPayload = useCallback(
+    (includeSceneId: boolean) => {
+      const payload: Record<string, unknown> = {
+        name: infoBallObjectName.trim() || "資訊球 1.0",
+        transparency: infoBallTransparency,
+        group: infoBallGroup,
+        location: infoBallLocation,
+        zoom: infoBallZoom,
+        model: infoBallModel,
+        sub_events: infoBallSubEvents,
+      };
+      if (includeSceneId) {
+        payload.scene_id = infoBallSceneId;
+      }
+      return payload;
+    },
+    [
+      infoBallGroup,
+      infoBallLocation,
+      infoBallModel,
+      infoBallObjectName,
+      infoBallSceneId,
+      infoBallSubEvents,
+      infoBallTransparency,
+      infoBallZoom,
+    ],
+  );
+
+  const infoBallJsonString = useMemo(
+    () => JSON.stringify(buildInfoBallRequestPayload(false), null, 2),
+    [buildInfoBallRequestPayload],
+  );
+
+  const infoBallSubEventsAdminString = useMemo(
+    () => formatSubEventsForAdmin(infoBallSubEvents),
+    [infoBallSubEvents],
+  );
+
+  const inferSubEventPrefixFromMap = (map?: InfoBallSubEventMap) => {
+    if (!map) return "";
+    const keys = Object.keys(map);
+    if (keys.length === 0) return "";
+    const samples = keys
+      .map((key) => {
+        if (!key.includes("_")) return null;
+        const segments = key.split("_");
+        segments.pop();
+        return segments.join("_");
+      })
+      .filter((value): value is string => Boolean(value));
+    if (!samples.length) return "";
+    const first = samples[0];
+    const allMatch = samples.every((value) => value === first);
+    return allMatch ? first : "";
+  };
+
+  const buildFaceInteractionsFromSubEvents = (map: InfoBallSubEventMap | undefined, totalFaces: number) => {
+    const next = Array.from({ length: totalFaces }, () => createDefaultFaceEvent());
+    if (!map) return next;
+    Object.entries(map).forEach(([key, events]) => {
+      if (!Array.isArray(events) || events.length === 0) return;
+      const suffix = Number(key.split("_").pop());
+      if (!Number.isFinite(suffix)) return;
+      const index = suffix - 1;
+      if (index < 0 || index >= totalFaces) return;
+      const event = events[0];
+      next[index] = {
+        id: event.id ?? DEFAULT_EVENT_ID,
+        values: event.values ?? {},
+        actions: (event.actions ?? []).map((action) => ({
+          id: action.id,
+          values: sanitizeActionValues(action.values ?? {}),
+        })),
+      };
+    });
+    return next;
+  };
+
+  const applyInfoBallRemote = (arObject: RemoteInfoBallResponse) => {
+    const fields = arObject.model?.fields ?? {};
+    const nextFloorCount = Math.max(1, fields.floor_count ?? infoBallFloorCount);
+    const nextFaceCount = Math.max(1, fields.face_count ?? infoBallFaceCount);
+    const totalFaces = nextFloorCount * nextFaceCount;
+    setInfoBallObjectName(arObject.name ?? "資訊球 1.0");
+    setInfoBallSceneId(arObject.scene_id ?? infoBallSceneId);
+    setInfoBallTransparency(
+      typeof arObject.transparency === "number" ? arObject.transparency : arObject.transparency ?? 1,
+    );
+    setInfoBallGroup(
+      typeof arObject.group === "number" && !Number.isNaN(arObject.group) ? arObject.group : null,
+    );
+    setInfoBallLocation({
+      x: arObject.location?.x ?? 0,
+      y: arObject.location?.y ?? 0,
+      z: arObject.location?.z ?? 0,
+      rotate_x: arObject.location?.rotate_x ?? 0,
+      rotate_y: arObject.location?.rotate_y ?? 0,
+      rotate_z: arObject.location?.rotate_z ?? 0,
+    });
+    setInfoBallZoom({
+      x: arObject.zoom?.x ?? 1,
+      y: arObject.zoom?.y ?? 1,
+      z: arObject.zoom?.z ?? 1,
+    });
+    setInfoBallIsChild(Boolean(fields.is_child));
+    setInfoBallIsHidden(Boolean(fields.is_hidden));
+    setInfoBallAllowPinch(Boolean(fields.is_allow_pinch));
+    setInfoBallIsOcclusion(Boolean(fields.is_occlusion));
+    setInfoBallFloorCount(nextFloorCount);
+    setInfoBallFaceCount(nextFaceCount);
+    setInfoBallFloorHeight(fields.floor_height ?? infoBallFloorHeight);
+    setInfoBallFloorGap(fields.floor_gap ?? infoBallFloorGap);
+    setInfoBallFaceWidth(fields.face_width ?? infoBallFaceWidth);
+    setInfoBallFaceGap(fields.face_gap ?? infoBallFaceGap);
+    setInfoBallSpeed(fields.speed ?? infoBallSpeed);
+    setInfoBallFloorAngles(Array.isArray(fields.floor_angles) ? fields.floor_angles.map((angle) => Number(angle) || 0) : []);
+    setInfoBallFaceGapList(
+      Array.isArray(fields.face_gap_list) ? fields.face_gap_list.map((gap) => Number(gap) || 0) : [],
+    );
+    const photos = arObject.model?.texture?.photos ?? [];
+    setInfoBallPhotos(() =>
+      Array.from({ length: totalFaces }, (_, index) => photos[index] ?? ""),
+    );
+    setInfoBallPhotoSelections(Array(totalFaces).fill(null));
+    const prefixCandidate = String(arObject.id ?? "").trim();
+    const subEvents =
+      arObject.sub_events ??
+      arObject.model?.sub_events ??
+      createDefaultSubEvents(prefixCandidate || infoBallSubEventPrefix, totalFaces);
+    setInfoBallSubEventPrefix(
+      inferSubEventPrefixFromMap(subEvents) || prefixCandidate || infoBallSubEventPrefix,
+    );
+    setInfoBallFaceInteractions(buildFaceInteractionsFromSubEvents(subEvents, totalFaces));
+  };
+
+  const handleCreateInfoBall = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!infoBallSceneId) {
+      setInfoBallStatusError("請先選擇 Scene。");
+      return;
+    }
+    setInfoBallSaving(true);
+    setInfoBallStatusMessage(null);
+    setInfoBallStatusError(null);
+    try {
+      const payload = buildInfoBallRequestPayload(true);
+      console.log("[InfoBall] Create payload", payload);
+      const response = await api("/ar-objects", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error((data as { error?: string })?.error ?? "建立資訊球失敗");
+      }
+      const newId =
+        (data as { id?: number }).id ??
+        (data as { ar_object?: { id?: number } }).ar_object?.id ??
+        null;
+      if (newId) {
+        setInfoBallObjectId(newId);
+        setInfoBallObjectIdInput(String(newId));
+      }
+      setInfoBallStatusMessage(
+        newId ? `已建立資訊球 #${newId}` : "資訊球建立完成。",
+      );
+    } catch (error) {
+      console.error("Create InfoBall failed", error);
+      setInfoBallStatusError(error instanceof Error ? error.message : "建立資訊球失敗");
+    } finally {
+      setInfoBallSaving(false);
+    }
+  };
+
+  const handleUpdateInfoBall = async () => {
+    if (!infoBallObjectId) {
+      setInfoBallStatusError("請先輸入並載入資訊球物件 ID。");
+      return;
+    }
+    setInfoBallSaving(true);
+    setInfoBallStatusMessage(null);
+    setInfoBallStatusError(null);
+    try {
+      const payload = buildInfoBallRequestPayload(false);
+      console.log("[InfoBall] Update payload", payload);
+      const response = await api(`/ar-objects/${infoBallObjectId}`, {
+        method: "PATCH",
+        body: JSON.stringify(payload),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error((data as { error?: string })?.error ?? "更新資訊球失敗");
+      }
+      setInfoBallStatusMessage(`已更新資訊球 #${infoBallObjectId}`);
+    } catch (error) {
+      console.error("Update InfoBall failed", error);
+      setInfoBallStatusError(error instanceof Error ? error.message : "更新資訊球失敗");
+    } finally {
+      setInfoBallSaving(false);
+    }
+  };
+
+  const handleLoadInfoBall = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const parsedId = Number(infoBallObjectIdInput);
+    if (!Number.isFinite(parsedId) || parsedId <= 0) {
+      setInfoBallStatusError("請輸入正確的資訊球物件 ID。");
+      return;
+    }
+    setInfoBallLoading(true);
+    setInfoBallStatusMessage(null);
+    setInfoBallStatusError(null);
+    try {
+      const response = await api(`/ar-objects/${parsedId}`, { method: "GET" });
+      const data = (await response.json().catch(() => ({}))) as RemoteInfoBallResponse;
+      if (!response.ok) {
+        throw new Error((data as { error?: string })?.error ?? "讀取資訊球失敗");
+      }
+      applyInfoBallRemote(data);
+      setInfoBallObjectId(parsedId);
+      setInfoBallObjectIdInput(String(parsedId));
+      setInfoBallStatusMessage(`已載入資訊球 #${parsedId}`);
+    } catch (error) {
+      console.error("Load InfoBall failed", error);
+      setInfoBallStatusError(error instanceof Error ? error.message : "讀取資訊球失敗");
+    } finally {
+      setInfoBallLoading(false);
     }
   };
 
@@ -1062,6 +1490,159 @@ export default function ToolsPage() {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
+              <form className="space-y-4 rounded-md border border-slate-200 p-4" onSubmit={handleCreateInfoBall}>
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="space-y-1">
+                    <Label>Scene</Label>
+                    <ScenePicker
+                      scenes={scenesQuery.data ?? []}
+                      value={infoBallSceneId}
+                      onChange={setInfoBallSceneId}
+                      placeholder={scenesQuery.isLoading ? "Loading scenes…" : "Select scene"}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label htmlFor="infoball-name">物件名稱</Label>
+                    <Input
+                      id="infoball-name"
+                      value={infoBallObjectName}
+                      onChange={(event) => setInfoBallObjectName(event.target.value)}
+                      placeholder="資訊球 1.0"
+                    />
+                  </div>
+                </div>
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="space-y-1">
+                    <Label htmlFor="infoball-group">群組 (group)</Label>
+                    <Input
+                      id="infoball-group"
+                      type="number"
+                      value={infoBallGroup ?? ""}
+                      onChange={(event) => {
+                        if (event.target.value === "") {
+                          setInfoBallGroup(null);
+                          return;
+                        }
+                        const parsed = Number(event.target.value);
+                        setInfoBallGroup(Number.isNaN(parsed) ? null : parsed);
+                      }}
+                      placeholder="選填，例如 1"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label htmlFor="infoball-transparency">透明度 (0-1)</Label>
+                    <Input
+                      id="infoball-transparency"
+                      type="number"
+                      step="0.05"
+                      min={0}
+                      max={1}
+                      value={infoBallTransparency}
+                      onChange={(event) => {
+                        const parsed = Number(event.target.value);
+                        setInfoBallTransparency(Number.isNaN(parsed) ? 1 : parsed);
+                      }}
+                    />
+                  </div>
+                </div>
+                <div className="grid gap-4 md:grid-cols-3">
+                  {(
+                    [
+                      { key: "x", label: "位置 X" },
+                      { key: "y", label: "位置 Y" },
+                      { key: "z", label: "位置 Z" },
+                    ] as Array<{ key: keyof InfoBallLocation; label: string }>
+                  ).map((field) => (
+                    <div key={field.key} className="space-y-1">
+                      <Label htmlFor={`infoball-location-${field.key}`}>{field.label}</Label>
+                      <Input
+                        id={`infoball-location-${field.key}`}
+                        type="number"
+                        value={infoBallLocation[field.key]}
+                        onChange={(event) => handleLocationInputChange(field.key, event.target.value)}
+                      />
+                    </div>
+                  ))}
+                </div>
+                <div className="grid gap-4 md:grid-cols-3">
+                  {(
+                    [
+                      { key: "rotate_x", label: "旋轉 X" },
+                      { key: "rotate_y", label: "旋轉 Y" },
+                      { key: "rotate_z", label: "旋轉 Z" },
+                    ] as Array<{ key: keyof InfoBallLocation; label: string }>
+                  ).map((field) => (
+                    <div key={field.key} className="space-y-1">
+                      <Label htmlFor={`infoball-rotation-${field.key}`}>{field.label}</Label>
+                      <Input
+                        id={`infoball-rotation-${field.key}`}
+                        type="number"
+                        value={infoBallLocation[field.key]}
+                        onChange={(event) => handleLocationInputChange(field.key, event.target.value)}
+                      />
+                    </div>
+                  ))}
+                </div>
+                <div className="grid gap-4 md:grid-cols-3">
+                  {(["x", "y", "z"] as Array<keyof InfoBallZoom>).map((axis) => (
+                    <div key={`zoom-${axis}`} className="space-y-1">
+                      <Label htmlFor={`infoball-zoom-${axis}`}>縮放 {axis.toUpperCase()}</Label>
+                      <Input
+                        id={`infoball-zoom-${axis}`}
+                        type="number"
+                        step="0.05"
+                        value={infoBallZoom[axis]}
+                        onChange={(event) => handleZoomInputChange(axis, event.target.value)}
+                      />
+                    </div>
+                  ))}
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Button type="submit" disabled={infoBallSaving}>
+                    {infoBallSaving ? "處理中…" : "建立資訊球"}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={handleUpdateInfoBall}
+                    disabled={infoBallSaving || !infoBallObjectId}
+                  >
+                    {infoBallObjectId ? `更新 #${infoBallObjectId}` : "更新已載入的資訊球"}
+                  </Button>
+                </div>
+              </form>
+
+              <form className="space-y-3 rounded-md border border-dashed border-slate-200 p-4" onSubmit={handleLoadInfoBall}>
+                <div className="space-y-1">
+                  <Label htmlFor="infoball-object-id">從 LiG Cloud 載入資訊球</Label>
+                  <Input
+                    id="infoball-object-id"
+                    value={infoBallObjectIdInput}
+                    onChange={(event) => setInfoBallObjectIdInput(event.target.value)}
+                    placeholder="例如：70068"
+                  />
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Button type="submit" variant="secondary" disabled={infoBallLoading}>
+                    {infoBallLoading ? "載入中…" : "載入資訊球"}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={() => {
+                      setInfoBallObjectId(null);
+                      setInfoBallObjectIdInput("");
+                      setInfoBallStatusMessage(null);
+                      setInfoBallStatusError(null);
+                    }}
+                  >
+                    清除
+                  </Button>
+                </div>
+                {infoBallStatusMessage ? <p className="text-xs text-green-600">{infoBallStatusMessage}</p> : null}
+                {infoBallStatusError ? <p className="text-xs text-red-600">{infoBallStatusError}</p> : null}
+              </form>
+
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="space-y-3">
                   <div>
@@ -1482,7 +2063,22 @@ export default function ToolsPage() {
                 <Textarea value={infoBallJsonString} readOnly className="min-h-[240px] font-mono text-xs" />
               </div>
 
-              <p className="text-xs text-slate-500">JSON 已整合 sub_events，可於上方每個面設定事件與動作。</p>
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-semibold text-slate-800">sub_events 後台格式</h3>
+                  <Button variant="outline" size="sm" type="button" onClick={handleCopyInfoBallSubEvents}>
+                    複製 sub_events
+                  </Button>
+                </div>
+                <Textarea value={infoBallSubEventsAdminString} readOnly className="min-h-[240px] font-mono text-xs" />
+              </div>
+
+              <p className="text-xs text-slate-500">
+                JSON 已整合 sub_events：每個 key（例如 70232_1）對應一個面，可在上方面板設定事件/動作後再按 Update 送回 LiG Cloud。
+              </p>
+              <p className="text-xs text-slate-500">
+                LiG Cloud 後台尚未支援 sub_events API，可將上述 YAML 內容貼回後台手動更新（格式同 <code>prefix_序號</code>）。
+              </p>
             </CardContent>
           </Card>
         </TabsContent>

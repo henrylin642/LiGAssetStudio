@@ -81,7 +81,7 @@ GET    /api/jobs/:id/download        -> 302 redirect to sample ZIP
 | `/asset/[id]` | Asset preview, metadata, single-job actions, scene upload form. |
 | `/jobs` | Polling job dashboard showing progress and mock ZIP downloads. |
 | `/scenes` | Scene catalogue used by ScenePicker. |
-| `/gen` | Phase-two AIGC placeholder. |
+| `/gen` | 生成工作台：圖片去背、Nano Banana 文生圖、語音合成。 |
 | `/docs` | Inline documentation & flow reference. |
 
 ### Components (selected)
@@ -138,6 +138,27 @@ flowchart LR
     U --> C2[提示成功 & /scenes 可見]
   end
 ```
+
+### Multi-file Asset Upload
+
+The `Upload asset` sheet now accepts multiple file selections (Shift/Cmd click). Every selected file shares the same comma-separated tag list, and the sheet summarizes how many files plus the total size that will be uploaded in a single request.
+
+### Nano Banana 文生圖
+
+Set `NANO_BANANA_BASE_URL` 和 `NANO_BANANA_API_KEY` 後，即可在 `/gen` → **Nano Banana** 分頁輸入 Prompt、風格、畫面比例與輸出張數，一次取得 1-4 張圖片。頁面還可設定 negative prompt、CFG 引導強度與固定 seed，方便重現結果；若 API 回傳 base64 影像會自動轉成 data URL 供預覽下載。生成結果支援「存入 Gallery」一鍵匯入，並可自訂逗號分隔的 tags，老師生成後即可在主頁批次處理或上傳 Scene。
+
+### 資訊球 1.0 工具
+
+`/tools` → **資訊球 1.0** 讓老師直接選擇 Scene、輸入位置/旋轉/縮放，並以 type=13 的 JSON 呼叫 LiG Cloud `POST /api/v1/ar_objects` 建立新的 AR 物件，或輸入既有的 AR Object ID 後載入內容、編輯後再 `PATCH /api/v1/ar_objects/{id}` 更新。Sub events、動作與圖層設定都沿用同一套視覺編輯器，免手動複製貼上。
+
+### Batch Scene Upload
+
+The Gallery batch drawer now includes an `Upload to Scene` action that reuses the same scene, tags, and AR object naming pattern for every selected asset. The naming field supports lightweight templating:
+
+- `{{assetName}}` inserts the original asset name.
+- `{{index}}` inserts a running number starting from the provided “start index” value.
+
+For example, entering `Showroom-{{index}}-{{assetName}}` with a start index of `10` produces names such as `Showroom-10-Sample Image 1`.
 
 ## Notes
 

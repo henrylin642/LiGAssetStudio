@@ -5,7 +5,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScenePicker } from "@/components/scene-picker";
-import { BatchDrawer } from "@/components/batch-drawer";
+import { BatchDrawer, BatchSceneUploadInput } from "@/components/batch-drawer";
 import { FilterBar } from "@/components/gallery/filter-bar";
 import { AssetGrid } from "@/components/gallery/asset-grid";
 import { TypeTabs } from "@/components/type-tabs";
@@ -43,16 +43,21 @@ export default function GalleryPage() {
   const [perPage, setPerPage] = useState(24);
   const [type, setType] = useState<AssetType | "all">("all");
   const [selected, setSelected] = useState<string[]>([]);
+  const [selectedAssets, setSelectedAssets] = useState<Record<string, Asset>>({});
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [uploadAsset, setUploadAsset] = useState<Asset | null>(null);
   const [sceneId, setSceneId] = useState<number>();
   const [sceneName, setSceneName] = useState("");
   const [uploading, setUploading] = useState(false);
   const [assetUploadOpen, setAssetUploadOpen] = useState(false);
-  const [assetUploadFile, setAssetUploadFile] = useState<File | null>(null);
+  const [assetUploadFiles, setAssetUploadFiles] = useState<File[]>([]);
   const [assetUploadTags, setAssetUploadTags] = useState("");
   const [assetUploadError, setAssetUploadError] = useState<string | null>(null);
   const api = useApi();
+  const assetUploadTotalSize = useMemo(
+    () => assetUploadFiles.reduce((total, file) => total + file.size, 0),
+    [assetUploadFiles]
+  );
 
   const assetsQuery = useAssetsQuery({ search, page, perPage, type });
   const scenesQuery = useScenesQuery();
@@ -63,27 +68,33 @@ export default function GalleryPage() {
     unknown,
     Error,
     {
-      file: File;
+      files: File[];
       tags: string;
     }
   >({
-    mutationFn: async ({ file, tags }) => {
-      const base64 = await readFileAsBase64(file);
-      const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
+    mutationFn: async ({ files, tags }) => {
+      if (files.length === 0) {
+        throw new Error("請先選擇檔案");
+      }
       const tagList = tags
         .split(",")
         .map((tag) => tag.trim())
         .filter((tag) => tag.length > 0);
-
-      const payload = {
-        assets: [
-          {
+      const assetsPayload = await Promise.all(
+        files.map(async (file) => {
+          const base64 = await readFileAsBase64(file);
+          const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
+          return {
             data: base64,
             ext,
             filename: file.name,
             tags: tagList,
-          },
-        ],
+          };
+        })
+      );
+
+      const payload = {
+        assets: assetsPayload,
       };
 
       const response = await api("/assets", {
@@ -116,7 +127,7 @@ export default function GalleryPage() {
   });
 
   function resetAssetUploadState() {
-    setAssetUploadFile(null);
+    setAssetUploadFiles([]);
     setAssetUploadTags("");
     setAssetUploadError(null);
   }
@@ -130,8 +141,8 @@ export default function GalleryPage() {
   }
 
   function handleAssetFileChange(event: React.ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0] ?? null;
-    setAssetUploadFile(file);
+    const files = event.target.files ? Array.from(event.target.files) : [];
+    setAssetUploadFiles(files);
     setAssetUploadError(null);
     assetUploadMutation.reset();
     event.target.value = "";
@@ -139,14 +150,14 @@ export default function GalleryPage() {
 
   async function handleAssetUploadSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!assetUploadFile) {
+    if (assetUploadFiles.length === 0) {
       setAssetUploadError("請先選擇檔案");
       return;
     }
     setAssetUploadError(null);
     assetUploadMutation.reset();
     try {
-      await assetUploadMutation.mutateAsync({ file: assetUploadFile, tags: assetUploadTags });
+      await assetUploadMutation.mutateAsync({ files: assetUploadFiles, tags: assetUploadTags });
       resetAssetUploadState();
       setAssetUploadOpen(false);
     } catch (error) {
@@ -167,21 +178,62 @@ export default function GalleryPage() {
     return Math.max(1, Math.ceil(assetPage.total / assetPage.pageSize));
   }, [assetPage]);
 
-  function toggleAsset(assetId: string, shouldSelect: boolean) {
+  function toggleAsset(asset: Asset, shouldSelect: boolean) {
     setSelected((previous) => {
       const set = new Set(previous);
       if (shouldSelect) {
-        set.add(assetId);
+        set.add(asset.id);
       } else {
-        set.delete(assetId);
+        set.delete(asset.id);
       }
       return Array.from(set);
     });
+    setSelectedAssets((previous) => {
+      const next = { ...previous };
+      if (shouldSelect) {
+        next[asset.id] = asset;
+      } else {
+        delete next[asset.id];
+      }
+      return next;
+    });
+  }
+
+  function resetSelection() {
+    setSelected([]);
+    setSelectedAssets({});
   }
 
   async function handleCreateJob(payload: Parameters<typeof createJob.mutateAsync>[0]) {
     await createJob.mutateAsync(payload);
-    setSelected([]);
+    resetSelection();
+  }
+
+  function formatSceneName(template: string, assetName: string, index: number) {
+    const safeTemplate = template.trim().length > 0 ? template : "{{assetName}}";
+    return safeTemplate.replaceAll("{{assetName}}", assetName).replaceAll("{{index}}", String(index));
+  }
+
+  async function handleBatchUploadToScene(input: BatchSceneUploadInput) {
+    if (!input.sceneId) return;
+    const startIndex = Number.isFinite(input.startIndex) ? input.startIndex : 1;
+    const uploads = input.assetIds
+      .map((assetId, offset) => {
+        const asset = selectedAssets[assetId];
+        if (!asset) return null;
+        const name = formatSceneName(input.nameTemplate, asset.name, startIndex + offset);
+        return { assetId: asset.id, name };
+      })
+      .filter(Boolean) as { assetId: string; name: string }[];
+
+    for (const upload of uploads) {
+      await api("/scenes/upload-from-asset", {
+        method: "POST",
+        body: JSON.stringify({ assetId: upload.assetId, sceneId: input.sceneId, name: upload.name }),
+      });
+    }
+
+    resetSelection();
   }
 
   async function handleUploadToScene(event: React.FormEvent<HTMLFormElement>) {
@@ -282,6 +334,9 @@ export default function GalleryPage() {
         open={drawerOpen}
         onOpenChange={setDrawerOpen}
         onCreateJob={handleCreateJob}
+        onUploadToScene={handleBatchUploadToScene}
+        scenes={scenesQuery.data ?? []}
+        scenesLoading={scenesQuery.isLoading}
       />
 
       <Sheet open={assetUploadOpen} onOpenChange={handleAssetUploadOpenChange}>
@@ -293,10 +348,26 @@ export default function GalleryPage() {
           <form className="flex flex-1 flex-col gap-4 py-4" onSubmit={handleAssetUploadSubmit}>
             <div className="space-y-2">
               <Label htmlFor="gallery-asset-file">檔案</Label>
-              <Input id="gallery-asset-file" type="file" onChange={handleAssetFileChange} />
-              <p className="text-xs text-slate-500">
-                {assetUploadFile ? `${assetUploadFile.name} · ${formatBytes(assetUploadFile.size)}` : "支援圖片、影音與 3D 模型（png/jpg/webp、mp4/webm、glb 等）。"}
-              </p>
+              <Input id="gallery-asset-file" type="file" multiple onChange={handleAssetFileChange} />
+              {assetUploadFiles.length > 0 ? (
+                <div className="space-y-1 text-xs text-slate-500">
+                  <p>
+                    {assetUploadFiles.length} 檔案 · {formatBytes(assetUploadTotalSize)}
+                  </p>
+                  <ul className="list-disc space-y-0.5 pl-4">
+                    {assetUploadFiles.slice(0, 5).map((file) => (
+                      <li key={`${file.name}-${file.size}`}>{file.name}</li>
+                    ))}
+                    {assetUploadFiles.length > 5 ? (
+                      <li>… 以及 {assetUploadFiles.length - 5} 個檔案</li>
+                    ) : null}
+                  </ul>
+                </div>
+              ) : (
+                <p className="text-xs text-slate-500">
+                  支援圖片、影音與 3D 模型（png/jpg/webp、mp4/webm、glb 等）。
+                </p>
+              )}
             </div>
             <div className="space-y-2">
               <Label htmlFor="gallery-asset-tags">Tags（以逗號分隔，可留空）</Label>
@@ -309,7 +380,7 @@ export default function GalleryPage() {
             </div>
             {assetUploadError ? <p className="text-xs text-red-600">{assetUploadError}</p> : null}
             <SheetFooter>
-              <Button type="submit" disabled={!assetUploadFile || assetUploadMutation.isPending}>
+              <Button type="submit" disabled={assetUploadFiles.length === 0 || assetUploadMutation.isPending}>
                 {assetUploadMutation.isPending ? "Uploading…" : "Upload"}
               </Button>
             </SheetFooter>

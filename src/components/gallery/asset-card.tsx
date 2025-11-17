@@ -1,10 +1,10 @@
 import Link from "next/link";
-import { ExternalLink, Plus, Upload } from "lucide-react";
+import { Download, ExternalLink, Plus, Upload } from "lucide-react";
 import { Asset } from "@/types/dto";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatBytes } from "@/lib/utils";
 import { PreviewImage } from "@/components/preview/preview-image";
 import { PreviewVideo } from "@/components/preview/preview-video";
@@ -67,10 +67,10 @@ export function AssetCard({ asset, selected, onSelectChange, detailHref, onUploa
           <CardTitle className="line-clamp-2 text-base">{asset.name}</CardTitle>
           <Checkbox checked={selected} onCheckedChange={(checked) => onSelectChange(Boolean(checked))} />
         </div>
-        <CardDescription className="flex items-center justify-between text-xs text-slate-500">
+        <div className="flex items-center justify-between text-xs text-slate-500">
           <span>{formatBytes(asset.size)}</span>
           {asset.ext ? <Badge variant="secondary">{asset.ext.toUpperCase()}</Badge> : null}
-        </CardDescription>
+        </div>
       </CardHeader>
       <CardContent className="mt-auto flex flex-col gap-2">
         <Button variant="secondary" size="sm" className="inline-flex items-center gap-2" asChild>
@@ -78,6 +78,12 @@ export function AssetCard({ asset, selected, onSelectChange, detailHref, onUploa
             <ExternalLink className="h-4 w-4" />
             Details
           </Link>
+        </Button>
+        <Button variant="ghost" size="sm" className="inline-flex items-center gap-2" asChild>
+          <a href={asset.url} download target="_blank" rel="noreferrer">
+            <Download className="h-4 w-4" />
+            Download
+          </a>
         </Button>
         <Button variant="outline" size="sm" onClick={() => onSelectChange(!selected)} className="inline-flex items-center gap-2">
           <Plus className="h-4 w-4" />

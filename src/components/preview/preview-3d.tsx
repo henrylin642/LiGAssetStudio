@@ -20,12 +20,27 @@ type ModelViewerElement = HTMLElement & {
   "camera-orbit"?: string;
   "field-of-view"?: string;
   "animation-loop"?: boolean;
+  animationLoop?: boolean;
   jumpCameraToGoal?: () => void;
   getCameraOrbit?: () => { theta: number; phi: number; radius: number };
   getFieldOfView?: () => { deg: number };
   availableAnimations?: string[];
   animationName?: string;
-  play?: () => void;
+  play?: (options?: { repetitions?: number; pingpong?: boolean }) => void;
+  appendAnimation?: (
+    animationName?: string,
+    options?: {
+      repetitions?: number | null;
+      pingpong?: boolean;
+      weight?: number;
+      timeScale?: number;
+      fade?: boolean | number;
+      warp?: boolean | number;
+      relativeWarp?: boolean;
+      time?: number | null;
+    },
+  ) => void;
+  updateComplete?: Promise<unknown>;
 };
 
 interface Preview3DProps {
@@ -36,6 +51,51 @@ interface Preview3DProps {
 
 const DETAIL_MIN_HEIGHT = 360;
 const DETAIL_MAX_HEIGHT = 640;
+const dracoDecoderCdn = "https://www.gstatic.com/draco/versioned/decoders/1.5.6/";
+const animationCache = new Map<string, Promise<string[]>>();
+type GltfMinimal = {
+  animations: Array<{ name?: string }>;
+};
+
+async function loadAnimationNamesFromGlb(src: string): Promise<string[]> {
+  if (!src) return [];
+  if (!animationCache.has(src)) {
+    animationCache.set(
+      src,
+      (async () => {
+        try {
+          const [{ GLTFLoader }, { DRACOLoader }] = await Promise.all([
+            import("three/examples/jsm/loaders/GLTFLoader.js"),
+            import("three/examples/jsm/loaders/DRACOLoader.js"),
+          ]);
+          const loader = new GLTFLoader();
+          const dracoLoader = new DRACOLoader();
+          dracoLoader.setDecoderPath(dracoDecoderCdn);
+          loader.setDRACOLoader(dracoLoader);
+          return await new Promise<string[]>((resolve) => {
+            loader.load(
+              src,
+              (gltf: GltfMinimal) => {
+                dracoLoader.dispose();
+                const names = gltf.animations.map((clip, index) => clip.name?.trim() || `Animation ${index + 1}`);
+                resolve(names);
+              },
+              undefined,
+              () => {
+                dracoLoader.dispose();
+                resolve([]);
+              },
+            );
+          });
+        } catch (error) {
+          console.warn("Unable to load animation metadata via GLTFLoader", error);
+          return [];
+        }
+      })(),
+    );
+  }
+  return animationCache.get(src) ?? [];
+}
 
 export function Preview3D({ src, poster, variant = "grid" }: Preview3DProps) {
   const [ready, setReady] = useState(false);
@@ -68,10 +128,86 @@ export function Preview3D({ src, poster, variant = "grid" }: Preview3DProps) {
     animationNames.current = [];
     animationIndexRef.current = 0;
 
+    const refreshAnimationNames = () => {
+      const viewer = viewerRef.current;
+      if (!viewer) return false;
+      const names = viewer.availableAnimations ?? [];
+      if (!Array.isArray(names) || names.length === 0) return false;
+      animationNames.current = names as string[];
+      if (animationIndexRef.current >= names.length) {
+        animationIndexRef.current = 0;
+      }
+      return true;
+    };
+
+    const playSequentialAnimation = () => {
+      const viewer = viewerRef.current;
+      const names = animationNames.current;
+      if (!viewer) return;
+      if (names.length === 0) {
+        viewer.animationName = undefined;
+        viewer.play?.();
+        return;
+      }
+      const safeIndex = animationIndexRef.current % names.length;
+      const animationName = names[safeIndex];
+      viewer.animationName = animationName;
+      viewer.setAttribute("animation-name", animationName);
+      viewer.play?.({ repetitions: 1, pingpong: false });
+    };
+
+    const playAllAnimations = () => {
+      const viewer = viewerRef.current;
+      const names = animationNames.current;
+      if (!viewer || names.length === 0) return;
+      if (names.length === 1 || typeof viewer.appendAnimation !== "function") {
+        playSequentialAnimation();
+        return;
+      }
+      viewer.animationLoop = true;
+      viewer.setAttribute("animation-loop", "true");
+      const [first, ...rest] = names;
+      viewer.animationName = first;
+      viewer.setAttribute("animation-name", first);
+      viewer.play?.({ repetitions: Infinity, pingpong: false });
+      rest.forEach((name) => {
+        viewer.appendAnimation?.(name, {
+          repetitions: Infinity,
+          pingpong: false,
+          weight: 1,
+          timeScale: 1,
+          fade: false,
+          warp: false,
+          relativeWarp: true,
+          time: null,
+        });
+      });
+    };
+
+    const ensureAnimationNames = async () => {
+      if (refreshAnimationNames()) {
+        return true;
+      }
+      const fallbackNames = await loadAnimationNamesFromGlb(src);
+      if (fallbackNames.length > 0) {
+        animationNames.current = fallbackNames;
+        if (animationIndexRef.current >= fallbackNames.length) {
+          animationIndexRef.current = 0;
+        }
+        return true;
+      }
+      const viewer = viewerRef.current;
+      viewer?.play?.();
+      console.warn("No animations detected within timeout for", src);
+      return false;
+    };
+
     const handleLoad = () => {
       try {
         const viewer = viewerRef.current;
         if (!viewer) return;
+        viewer.animationLoop = false;
+        viewer.setAttribute("animation-loop", "false");
         if (typeof viewer.getCameraOrbit === "function") {
           initialOrbit.current = viewer.getCameraOrbit();
         }
@@ -79,22 +215,20 @@ export function Preview3D({ src, poster, variant = "grid" }: Preview3DProps) {
           const fov = viewer.getFieldOfView();
           initialFov.current = typeof fov?.deg === "number" ? fov.deg : null;
         }
-        try {
-          const names = (viewer.availableAnimations ?? []).filter(Boolean);
-          animationNames.current = names;
-          animationIndexRef.current = 0;
-          if (names.length > 0) {
-            const first = names[0];
-            viewer.animationName = first;
-            viewer.setAttribute("animation-name", first);
-            viewer.play?.();
-          } else {
-            viewer.animationName = undefined;
-            viewer.play?.();
-          }
-        } catch (error) {
-          console.warn("Unable to inspect available animations", error);
-        }
+        Promise.resolve(viewer.updateComplete)
+          .catch(() => undefined)
+          .then(() => ensureAnimationNames())
+          .then((hasAnimations) => {
+            const currentViewer = viewerRef.current;
+            if (!currentViewer || currentViewer !== viewer) return;
+            if (!hasAnimations) {
+              currentViewer.animationName = undefined;
+              currentViewer.play?.();
+              return;
+            }
+            animationIndexRef.current = 0;
+            playAllAnimations();
+          });
       } catch (error) {
         console.warn("Unable to read model-viewer camera properties", error);
       }
@@ -102,21 +236,8 @@ export function Preview3D({ src, poster, variant = "grid" }: Preview3DProps) {
 
     const node = viewerRef.current;
     node?.addEventListener("load", handleLoad);
-    const handleAnimationFinished = () => {
-      const viewer = viewerRef.current;
-      const names = animationNames.current;
-      if (!viewer || names.length <= 1) return;
-      const nextIndex = (animationIndexRef.current + 1) % names.length;
-      animationIndexRef.current = nextIndex;
-      const nextName = names[nextIndex];
-      viewer.animationName = nextName;
-      viewer.setAttribute("animation-name", nextName);
-      viewer.play?.();
-    };
-    node?.addEventListener("animation-finished", handleAnimationFinished as EventListener);
     return () => {
       node?.removeEventListener("load", handleLoad);
-      node?.removeEventListener("animation-finished", handleAnimationFinished as EventListener);
     };
   }, [ready, src]);
 
@@ -145,40 +266,78 @@ export function Preview3D({ src, poster, variant = "grid" }: Preview3DProps) {
   }, []);
 
   const controls = useMemo(() => {
-    if (variant !== "detail") return null;
-    return (
-      <div className="pointer-events-none absolute inset-x-0 bottom-4 flex justify-center">
-        <div className="flex items-center gap-2 rounded-full border border-slate-200 bg-white/90 px-3 py-1.5 shadow-md backdrop-blur">
+    if (variant === "detail") {
+      return (
+        <div className="pointer-events-none absolute inset-x-0 bottom-4 flex justify-center">
+          <div className="flex items-center gap-2 rounded-full border border-slate-200 bg-white/90 px-3 py-1.5 shadow-md backdrop-blur">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="pointer-events-auto h-8 px-3 text-xs"
+              onClick={() => handleZoom(0.8)}
+            >
+              Zoom In
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="pointer-events-auto h-8 px-3 text-xs"
+              onClick={() => handleZoom(1.25)}
+            >
+              Zoom Out
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="pointer-events-auto h-8 px-3 text-xs"
+              onClick={handleReset}
+            >
+              Reset
+            </Button>
+          </div>
+        </div>
+      );
+    }
+    if (variant === "grid") {
+      return (
+        <div className="pointer-events-none absolute bottom-2 right-2 flex flex-col gap-1">
           <Button
             type="button"
-            variant="ghost"
-            size="sm"
-            className="pointer-events-auto h-8 px-3 text-xs"
+            size="icon"
+            variant="secondary"
+            className="pointer-events-auto h-7 w-7 rounded-full text-xs"
             onClick={() => handleZoom(0.8)}
+            aria-label="Zoom in"
           >
-            Zoom In
+            +
           </Button>
           <Button
             type="button"
-            variant="ghost"
-            size="sm"
-            className="pointer-events-auto h-8 px-3 text-xs"
+            size="icon"
+            variant="secondary"
+            className="pointer-events-auto h-7 w-7 rounded-full text-xs"
             onClick={() => handleZoom(1.25)}
+            aria-label="Zoom out"
           >
-            Zoom Out
+            -
           </Button>
           <Button
             type="button"
+            size="icon"
             variant="ghost"
-            size="sm"
-            className="pointer-events-auto h-8 px-3 text-xs"
+            className="pointer-events-auto h-6 w-6 rounded-full text-[10px]"
             onClick={handleReset}
+            aria-label="Reset view"
           >
-            Reset
+            R
           </Button>
         </div>
-      </div>
-    );
+      );
+    }
+    return null;
   }, [handleReset, handleZoom, variant]);
 
   if (!ready) {
@@ -214,8 +373,6 @@ export function Preview3D({ src, poster, variant = "grid" }: Preview3DProps) {
     "shadow-intensity": "1.2",
     "environment-image": "neutral",
     exposure: "1.1",
-    autoplay: true,
-    "animation-loop": true,
     "animation-crossfade-duration": "400",
     ar: true,
   } as Record<string, unknown>);

@@ -23,8 +23,8 @@ const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
-  const [token, setTokenState] = useState<string | null>(() => getToken());
-  const [status, setStatus] = useState<AuthStatus>(() => (getToken() ? "authenticated" : "unauthenticated"));
+  const [token, setTokenState] = useState<string | null>(null);
+  const [status, setStatus] = useState<AuthStatus>("loading");
   const [user, setUser] = useState<AuthResponse["user"]>();
   const [error, setError] = useState<string>();
 
@@ -41,6 +41,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setStatus("authenticated");
     setError(undefined);
   }, []);
+
+  useEffect(() => {
+    if (status !== "loading") return;
+    const storedToken = getToken();
+    if (storedToken) {
+      queueMicrotask(() => setToken(storedToken));
+    } else {
+      queueMicrotask(() => setStatus("unauthenticated"));
+    }
+  }, [setToken, status]);
 
   const login = useCallback(
     async (email: string, password: string) => {

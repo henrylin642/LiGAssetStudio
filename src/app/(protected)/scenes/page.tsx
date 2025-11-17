@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { useScenesQuery } from "@/hooks/use-scenes";
 
@@ -13,9 +14,14 @@ export default function ScenesPage() {
           <h1 className="text-2xl font-semibold text-slate-900">Scenes</h1>
           <p className="text-sm text-slate-500">Reference list for uploading AR objects.</p>
         </div>
-        <Button variant="outline" onClick={() => scenesQuery.refetch()} disabled={scenesQuery.isRefetching}>
-          {scenesQuery.isRefetching ? "Refreshing…" : "Refresh"}
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={() => scenesQuery.refetch()} disabled={scenesQuery.isRefetching}>
+            {scenesQuery.isRefetching ? "Refreshing…" : "Refresh"}
+          </Button>
+          <Button asChild>
+            <Link href="/scenes/view">Scene View</Link>
+          </Button>
+        </div>
       </div>
 
       {scenesQuery.isError ? (

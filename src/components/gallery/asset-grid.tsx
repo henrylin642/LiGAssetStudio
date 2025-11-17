@@ -4,7 +4,7 @@ import { AssetCard } from "./asset-card";
 interface AssetGridProps {
   assets: Asset[];
   selectedIds: string[];
-  onToggleAsset: (assetId: string, selected: boolean) => void;
+  onToggleAsset: (asset: Asset, selected: boolean) => void;
   onUploadFromCard: (asset: Asset) => void;
 }
 
@@ -16,7 +16,7 @@ export function AssetGrid({ assets, selectedIds, onToggleAsset, onUploadFromCard
           key={asset.id}
           asset={asset}
           selected={selectedIds.includes(asset.id)}
-          onSelectChange={(next) => onToggleAsset(asset.id, next)}
+          onSelectChange={(next) => onToggleAsset(asset, next)}
           detailHref={`/asset/${asset.id}`}
           onUploadToScene={() => onUploadFromCard(asset)}
         />

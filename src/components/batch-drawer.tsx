@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { ScenePicker } from "@/components/scene-picker";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -13,13 +14,23 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
-import type { CreateJobInput, DownscaleOptions, FFmpegMode, FFmpegOptions, JobKind } from "@/types/dto";
+import type { CreateJobInput, DownscaleOptions, FFmpegMode, FFmpegOptions, JobKind, Scene } from "@/types/dto";
 
 interface BatchDrawerProps {
   assetIds: string[];
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onCreateJob: (input: CreateJobInput) => Promise<void>;
+  onUploadToScene: (input: BatchSceneUploadInput) => Promise<void>;
+  scenes: Scene[];
+  scenesLoading?: boolean;
+}
+
+export interface BatchSceneUploadInput {
+  assetIds: string[];
+  sceneId: number;
+  nameTemplate: string;
+  startIndex: number;
 }
 
 const DEFAULT_DOWNSCALE: DownscaleOptions = {
@@ -39,10 +50,15 @@ const DEFAULT_FFMPEG: FFmpegOptions = {
   fastStart: true,
 };
 
-export function BatchDrawer({ assetIds, open, onOpenChange, onCreateJob }: BatchDrawerProps) {
-  const [kind, setKind] = useState<JobKind>("downscale");
+type BatchAction = JobKind | "sceneUpload";
+
+export function BatchDrawer({ assetIds, open, onOpenChange, onCreateJob, onUploadToScene, scenes, scenesLoading }: BatchDrawerProps) {
+  const [action, setAction] = useState<BatchAction>("downscale");
   const [downscale, setDownscale] = useState<DownscaleOptions>(DEFAULT_DOWNSCALE);
   const [ffmpeg, setFfmpeg] = useState<FFmpegOptions>(DEFAULT_FFMPEG);
+  const [sceneId, setSceneId] = useState<number>();
+  const [nameTemplate, setNameTemplate] = useState("{{assetName}}");
+  const [startIndex, setStartIndex] = useState(1);
   const [submitting, setSubmitting] = useState(false);
   const selectedCount = assetIds.length;
 
@@ -51,12 +67,22 @@ export function BatchDrawer({ assetIds, open, onOpenChange, onCreateJob }: Batch
     if (selectedCount === 0) return;
     setSubmitting(true);
     try {
-      const payload: CreateJobInput = {
-        kind,
-        assetIds,
-        options: kind === "downscale" ? downscale : ffmpeg,
-      };
-      await onCreateJob(payload);
+      if (action === "sceneUpload") {
+        if (!sceneId) return;
+        await onUploadToScene({
+          assetIds,
+          sceneId,
+          nameTemplate,
+          startIndex: Number.isFinite(startIndex) ? startIndex : 1,
+        });
+      } else {
+        const payload: CreateJobInput = {
+          kind: action,
+          assetIds,
+          options: action === "downscale" ? downscale : ffmpeg,
+        };
+        await onCreateJob(payload);
+      }
       onOpenChange(false);
     } finally {
       setSubmitting(false);
@@ -77,24 +103,25 @@ export function BatchDrawer({ assetIds, open, onOpenChange, onCreateJob }: Batch
         <SheetHeader>
           <SheetTitle>Batch Processing</SheetTitle>
           <SheetDescription>
-            Configure a {kind === "downscale" ? "downscale" : "FFmpeg"} job for {selectedCount} selected assets.
+            Run jobs or scene uploads for {selectedCount} selected assets in one go.
           </SheetDescription>
         </SheetHeader>
         <form className="flex flex-1 flex-col gap-6 overflow-y-auto py-4" onSubmit={handleSubmit}>
           <section className="space-y-2">
-            <Label htmlFor="kind">Job type</Label>
-            <Select value={kind} onValueChange={(value) => setKind(value as JobKind)}>
-              <SelectTrigger id="kind">
+            <Label htmlFor="action">Batch action</Label>
+            <Select value={action} onValueChange={(value) => setAction(value as BatchAction)}>
+              <SelectTrigger id="action">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="downscale">Downscale (image)</SelectItem>
                 <SelectItem value="ffmpeg">FFmpeg (video)</SelectItem>
+                <SelectItem value="sceneUpload">Upload to Scene</SelectItem>
               </SelectContent>
             </Select>
           </section>
 
-          {kind === "downscale" ? (
+          {action === "downscale" ? (
             <section className="space-y-4">
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
@@ -146,7 +173,9 @@ export function BatchDrawer({ assetIds, open, onOpenChange, onCreateJob }: Batch
                 </Select>
               </div>
             </section>
-          ) : (
+          ) : null}
+
+          {action === "ffmpeg" ? (
             <section className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="mode">FFmpeg mode</Label>
@@ -233,11 +262,57 @@ export function BatchDrawer({ assetIds, open, onOpenChange, onCreateJob }: Batch
                 </Select>
               </div>
             </section>
-          )}
+          ) : null}
+
+          {action === "sceneUpload" ? (
+            <section className="space-y-4">
+              <div className="space-y-2">
+                <Label>Scene</Label>
+                <ScenePicker
+                  scenes={scenes}
+                  value={sceneId}
+                  onChange={setSceneId}
+                  placeholder={scenesLoading ? "Loading scenes…" : "Select scene"}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="nameTemplate">AR object naming</Label>
+                <Input
+                  id="nameTemplate"
+                  value={nameTemplate}
+                  onChange={(event) => setNameTemplate(event.target.value)}
+                  placeholder="{{assetName}}"
+                />
+                <p className="text-xs text-slate-500">
+                  Use tokens like {"{{assetName}}"} and {"{{index}}"} to reuse the asset name or running number.
+                </p>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="startIndex">Start index</Label>
+                <Input
+                  id="startIndex"
+                  type="number"
+                  min={1}
+                  value={startIndex}
+                  onChange={(event) => setStartIndex(Number(event.target.value) || 1)}
+                />
+              </div>
+            </section>
+          ) : null}
 
           <SheetFooter>
-            <Button type="submit" disabled={selectedCount === 0 || submitting} className="w-full sm:w-auto">
-              {submitting ? "Creating job..." : `Create ${kind === "downscale" ? "Downscale" : "FFmpeg"} job`}
+            <Button
+              type="submit"
+              disabled={selectedCount === 0 || submitting || (action === "sceneUpload" && !sceneId)}
+              className="w-full sm:w-auto"
+            >
+              {submitting
+                ? action === "sceneUpload"
+                  ? "Uploading…"
+                  : "Creating job..."
+                : action === "sceneUpload"
+                  ? "Upload to Scene"
+                  : `Create ${action === "downscale" ? "Downscale" : "FFmpeg"} job`}
             </Button>
           </SheetFooter>
         </form>
