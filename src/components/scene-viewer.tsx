@@ -4,6 +4,7 @@ import { useEffect, useRef } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+import type { GLTF } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { DRACOLoader } from "three/examples/jsm/loaders/DRACOLoader.js";
 import type { ArObject } from "@/types/dto";
 
@@ -494,9 +495,9 @@ export function SceneViewer({ objects, mediaMeasurements, onMediaDimensionsChang
     const addGlbObject = (object: ArObject, assetUrl: string) => {
       const location = getSafeLocation(object);
       const zoom = getSafeZoom(object);
-      gltfLoader.load(
-        assetUrl,
-        (gltf) => {
+        gltfLoader.load(
+          assetUrl,
+          (gltf: GLTF) => {
           const wrapper = new THREE.Group();
           const root = gltf.scene ?? new THREE.Group();
           wrapper.add(root);
