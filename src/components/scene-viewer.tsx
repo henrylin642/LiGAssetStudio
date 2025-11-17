@@ -4,7 +4,6 @@ import { useEffect, useRef } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
-import type { GLTF } from "three/examples/jsm/loaders/GLTFLoader";
 import { DRACOLoader } from "three/examples/jsm/loaders/DRACOLoader.js";
 import type { ArObject } from "@/types/dto";
 
@@ -20,6 +19,10 @@ export interface SceneViewerProps {
   mediaMeasurements?: Record<string, { width?: number; height?: number }>;
   onMediaDimensionsChange?: (payload: { objectKey: string; width?: number; height?: number }) => void;
 }
+
+type GltfLoadResult = {
+  scene?: THREE.Object3D | THREE.Group;
+};
 
 const DEFAULT_COLOR = 0x94a3b8;
 const DRACO_DECODER_CDN = "https://www.gstatic.com/draco/versioned/decoders/1.5.6/";
@@ -497,7 +500,7 @@ export function SceneViewer({ objects, mediaMeasurements, onMediaDimensionsChang
       const zoom = getSafeZoom(object);
         gltfLoader.load(
           assetUrl,
-          (gltf: GLTF) => {
+          (gltf: GltfLoadResult) => {
           const wrapper = new THREE.Group();
           const root = gltf.scene ?? new THREE.Group();
           wrapper.add(root);
