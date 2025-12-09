@@ -8,7 +8,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Missing bearer token" }, { status: 401 });
   }
 
-  const upstream = await ligFetch("/api/v1/scenes", { method: "GET" }, token);
+  const upstream = await ligFetch("/api/scenes", { method: "GET" }, token);
 
   if (upstream.status === 401) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

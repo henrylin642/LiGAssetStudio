@@ -6,8 +6,11 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useAssetsQuery } from "@/hooks/use-assets";
-import type { Asset, AssetPage } from "@/types/dto";
+import type { Asset, AssetPage, AssetType } from "@/types/dto";
 import { PreviewImage } from "@/components/preview/preview-image";
+import { PreviewVideo } from "@/components/preview/preview-video";
+import { Preview3D } from "@/components/preview/preview-3d";
+import { PreviewAudio } from "@/components/preview/preview-audio";
 import { cn, formatBytes } from "@/lib/utils";
 
 interface GalleryAssetPickerProps {
@@ -17,6 +20,7 @@ interface GalleryAssetPickerProps {
   selectedAssetId?: string;
   title?: string;
   description?: string;
+  type?: AssetType;
 }
 
 const PER_PAGE = 24;
@@ -28,6 +32,7 @@ export function GalleryAssetPicker({
   selectedAssetId,
   title = "Select image from Gallery",
   description = "Choose an existing Gallery image to fill this slot.",
+  type = "image",
 }: GalleryAssetPickerProps) {
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
@@ -37,7 +42,7 @@ export function GalleryAssetPicker({
     search,
     page,
     perPage: PER_PAGE,
-    type: "image",
+    type,
   });
 
   const assetPage = assetsQuery.data as AssetPage | undefined;
@@ -63,6 +68,22 @@ export function GalleryAssetPicker({
     onOpenChange(nextOpen);
   };
 
+  const renderPreview = (asset: Asset) => {
+    if (asset.type === "video") {
+      return <PreviewVideo src={asset.url} poster={asset.previewUrl} />;
+    }
+    if (asset.type === "model") {
+      return <Preview3D src={asset.url} poster={asset.previewUrl} />;
+    }
+    if (asset.type === "audio") {
+      return <PreviewAudio src={asset.url} />;
+    }
+    return <PreviewImage src={asset.previewUrl ?? asset.url} alt={asset.name} />;
+  };
+
+  const typeLabel =
+    type === "video" ? "影片" : type === "model" ? "3D 模型" : type === "audio" ? "音訊" : "圖片";
+
   return (
     <Sheet open={open} onOpenChange={handleOpenChange}>
       <SheetContent className="max-w-4xl">
@@ -78,7 +99,7 @@ export function GalleryAssetPicker({
               <Input
                 value={searchInput}
                 onChange={(event) => setSearchInput(event.target.value)}
-                placeholder="搜尋圖片名稱或描述"
+                placeholder={`搜尋${typeLabel}名稱或描述`}
                 className="pl-9"
               />
             </div>
@@ -100,7 +121,7 @@ export function GalleryAssetPicker({
 
           {assetsQuery.isError ? (
             <p className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-600">
-              {assetsQuery.error?.message ?? "載入圖片時發生錯誤。"}
+              {assetsQuery.error?.message ?? `載入${typeLabel}時發生錯誤。`}
             </p>
           ) : null}
 
@@ -109,7 +130,7 @@ export function GalleryAssetPicker({
               <div className="flex h-40 items-center justify-center text-sm text-slate-500">載入中…</div>
             ) : assets.length === 0 ? (
               <div className="flex h-40 items-center justify-center rounded-md border border-dashed border-slate-200 bg-slate-50 text-sm text-slate-500">
-                找不到符合條件的圖片。
+                找不到符合條件的{typeLabel}。
               </div>
             ) : (
               <div className="grid gap-4 pb-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
@@ -126,7 +147,7 @@ export function GalleryAssetPicker({
                       handleOpenChange(false);
                     }}
                   >
-                    <PreviewImage src={asset.previewUrl ?? asset.url} alt={asset.name} />
+                    {renderPreview(asset)}
                     <div className="space-y-1">
                       <p className="text-sm font-medium text-slate-900 line-clamp-2">{asset.name}</p>
                       <p className="text-xs text-slate-500">{formatBytes(asset.size)}</p>

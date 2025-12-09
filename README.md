@@ -60,7 +60,7 @@ POST   /api/auth/login               -> {LIG}/api/v1/login
 POST   /api/auth/logout              -> local token cleanup
 GET    /api/assets                   -> {LIG}/api/v1/assets
 GET    /api/assets/:id               -> {LIG}/api/v1/get_asset/:id
-GET    /api/scenes                   -> {LIG}/api/v1/scenes
+GET    /api/scenes                   -> {LIG}/api/scenes
 POST   /api/scenes/upload-from-asset -> {LIG}/api/v1/ar_objects/from_asset/:assetId
 POST   /api/jobs                     -> mock batch job creation
 GET    /api/jobs                     -> mock job listing
@@ -166,3 +166,14 @@ For example, entering `Showroom-{{index}}-{{assetName}}` with a start index of `
 - Mock jobs live in-memory. Restarting the server clears the queue.
 - Replace mocked ZIP with a real bundle service once available.
 # LiGAssetStudio
+
+## Hidden Features (Client Demo)
+
+The following pages have been temporarily hidden from the navigation menu for client demonstration purposes:
+
+- `/tools`: Tools page (Info Ball 1.0)
+- `/gen`: Generation workbench (Image removal, Text-to-Image, TTS)
+- `/jobs`: Job dashboard
+- `/docs`: Documentation
+
+To restore them, uncomment the corresponding lines in `src/app/(protected)/layout.tsx`.

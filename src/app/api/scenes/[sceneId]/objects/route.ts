@@ -47,8 +47,9 @@ export async function GET(request: NextRequest, context: { params: Promise<{ sce
   const page = currentUrl.searchParams.get("page") ?? "1";
   const search = new URLSearchParams({ per_page: perPage, page });
 
+  // Upstream does not expose objects under /api/scenes; use the v1 helper instead.
   const upstream = await ligFetch(
-    `/api/v1/scenes/${encodeURIComponent(sceneId)}/ar_objects?${search.toString()}`,
+    `/api/v1/ar_objects_from_scene/${encodeURIComponent(sceneId)}?${search.toString()}`,
     { method: "GET" },
     token,
   );

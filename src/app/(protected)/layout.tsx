@@ -8,11 +8,11 @@ import { cn } from "@/lib/utils";
 
 const NAV_ITEMS = [
   { href: "/", label: "Gallery" },
-  { href: "/tools", label: "Tools" },
-  { href: "/jobs", label: "Jobs" },
+  // { href: "/tools", label: "Tools" },
+  // { href: "/jobs", label: "Jobs" },
   { href: "/scenes", label: "Scenes" },
-  { href: "/docs", label: "Docs" },
-  { href: "/gen", label: "Gen" },
+  // { href: "/docs", label: "Docs" },
+  // { href: "/gen", label: "Gen" },
 ];
 
 export default function ProtectedLayout({ children }: { children: React.ReactNode }) {

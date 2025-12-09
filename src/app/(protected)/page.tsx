@@ -292,24 +292,47 @@ export default function GalleryPage() {
         }}
       />
 
-      {error ? <ErrorBanner message={error.message} /> : null}
-      {assetPage?.items?.length === 0 && !isLoading && !error ? (
-        <ErrorBanner message="找不到任何資產，可能是 API 返回空清單或發生 502 錯誤。" />
-      ) : null}
+      <div className="relative min-h-[200px]">
+        {assetsQuery.isFetching && !isLoading ? (
+          <div className="absolute inset-0 z-50 flex items-center justify-center bg-white/50 backdrop-blur-[1px]">
+            <div className="flex items-center gap-2 rounded-full bg-white px-4 py-2 shadow-lg ring-1 ring-slate-900/10">
+              <svg
+                className="h-4 w-4 animate-spin text-slate-500"
+                xmlns="http://www.w3.org/2000/svg"
+                fill="none"
+                viewBox="0 0 24 24"
+              >
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                <path
+                  className="opacity-75"
+                  fill="currentColor"
+                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                ></path>
+              </svg>
+              <span className="text-sm font-medium text-slate-700">Loading...</span>
+            </div>
+          </div>
+        ) : null}
 
-      {isLoading ? (
-        <div className="flex h-40 items-center justify-center text-sm text-slate-500">Loading assets…</div>
-      ) : (
-        <AssetGrid
-          assets={assets}
-          selectedIds={selected}
-          onToggleAsset={toggleAsset}
-          onUploadFromCard={(asset) => {
-            setUploadAsset(asset);
-            setSceneName(asset.name);
-          }}
-        />
-      )}
+        {error ? <ErrorBanner message={error.message} /> : null}
+        {assetPage?.items?.length === 0 && !isLoading && !error ? (
+          <ErrorBanner message="找不到任何資產，可能是 API 返回空清單或發生 502 錯誤。" />
+        ) : null}
+
+        {isLoading ? (
+          <div className="flex h-40 items-center justify-center text-sm text-slate-500">Loading assets…</div>
+        ) : (
+          <AssetGrid
+            assets={assets}
+            selectedIds={selected}
+            onToggleAsset={toggleAsset}
+            onUploadFromCard={(asset) => {
+              setUploadAsset(asset);
+              setSceneName(asset.name);
+            }}
+          />
+        )}
+      </div>
 
       <div className="flex items-center justify-between gap-2 border-t border-slate-200 pt-4 text-sm">
         <span className="text-slate-500">
