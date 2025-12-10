@@ -59,3 +59,26 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
 
   return NextResponse.json(upstreamBody ?? { ok: true }, { status: upstream.status });
 }
+
+export async function DELETE(request: NextRequest, context: { params: Promise<{ id: string }> }) {
+  const token = extractBearerToken(request);
+  if (!token) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const { id } = await context.params;
+  const upstream = await ligFetch(
+    `/api/v1/ar_objects/${id}`,
+    {
+      method: "DELETE",
+    },
+    token,
+  );
+
+  if (!upstream.ok) {
+    const upstreamBody = await forwardJson(upstream);
+    return NextResponse.json(upstreamBody ?? { error: "Failed to delete AR object" }, { status: upstream.status });
+  }
+
+  return NextResponse.json({ ok: true }, { status: 200 });
+}

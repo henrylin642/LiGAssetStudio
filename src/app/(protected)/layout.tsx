@@ -38,7 +38,7 @@ export default function ProtectedLayout({ children }: { children: React.ReactNod
                     href={item.href}
                     className={cn(
                       "rounded-md px-2 py-1 transition",
-                      active ? "bg-slate-900 text-white" : "hover:bg-slate-100 hover:text-slate-900",
+                      active ? "bg-black !text-white" : "hover:bg-slate-100 hover:text-slate-900",
                     )}
                   >
                     {item.label}

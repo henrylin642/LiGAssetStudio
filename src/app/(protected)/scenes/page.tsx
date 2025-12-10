@@ -18,7 +18,7 @@ export default function ScenesPage() {
           <Button variant="outline" onClick={() => scenesQuery.refetch()} disabled={scenesQuery.isRefetching}>
             {scenesQuery.isRefetching ? "Refreshing…" : "Refresh"}
           </Button>
-          <Button asChild>
+          <Button asChild className="bg-black !text-white hover:bg-slate-800">
             <Link href="/scenes/view">Scene View</Link>
           </Button>
         </div>

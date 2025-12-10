@@ -18,10 +18,12 @@ export interface SceneViewerProps {
   objects: SceneViewerObject[];
   mediaMeasurements?: Record<string, { width?: number; height?: number }>;
   onMediaDimensionsChange?: (payload: { objectKey: string; width?: number; height?: number }) => void;
+  groundHeight?: number;
 }
 
 type GltfLoadResult = {
   scene?: THREE.Object3D | THREE.Group;
+  animations?: THREE.AnimationClip[];
 };
 
 const DEFAULT_COLOR = 0x94a3b8;
@@ -159,13 +161,13 @@ type DimensionHint = { width?: number; height?: number } | undefined;
 function getMediaDimensions(texture?: THREE.Texture | null, hint?: DimensionHint) {
   const image = texture?.image as
     | {
-        width?: number;
-        height?: number;
-        naturalWidth?: number;
-        naturalHeight?: number;
-        videoWidth?: number;
-        videoHeight?: number;
-      }
+      width?: number;
+      height?: number;
+      naturalWidth?: number;
+      naturalHeight?: number;
+      videoWidth?: number;
+      videoHeight?: number;
+    }
     | undefined;
   let width = image?.width ?? image?.naturalWidth ?? image?.videoWidth;
   let height = image?.height ?? image?.naturalHeight ?? image?.videoHeight;
@@ -232,7 +234,7 @@ const buildInfoBallConfig = (object: ArObject) => {
   };
 };
 
-export function SceneViewer({ objects, mediaMeasurements, onMediaDimensionsChange }: SceneViewerProps) {
+export function SceneViewer({ objects, mediaMeasurements, onMediaDimensionsChange, groundHeight = 0 }: SceneViewerProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mediaMeasurementsRef = useRef<Record<string, { width?: number; height?: number }>>({});
   const mediaMeshRegistryRef = useRef<
@@ -245,10 +247,46 @@ export function SceneViewer({ objects, mediaMeasurements, onMediaDimensionsChang
     >
   >({});
 
+  // Three.js instances refs
+  const sceneContextRef = useRef<{
+    scene: THREE.Scene;
+    camera: THREE.PerspectiveCamera;
+    renderer: THREE.WebGLRenderer;
+    controls: OrbitControls;
+    group: THREE.Group;
+    clock: THREE.Clock;
+    grid: THREE.GridHelper;
+  } | null>(null);
+
+  // Animation and resources refs
+  const resourcesRef = useRef<{
+    planeMeshes: THREE.Mesh[];
+    gltfContainers: THREE.Object3D[];
+    infoBallRotators: Array<{ group: THREE.Group; speed: number }>;
+    videoEntries: Array<{ texture: THREE.VideoTexture; video: HTMLVideoElement }>;
+    dracoLoader: DRACOLoader | null;
+    mixers: THREE.AnimationMixer[];
+  }>({
+    planeMeshes: [],
+    gltfContainers: [],
+    infoBallRotators: [],
+    videoEntries: [],
+    dracoLoader: null,
+    mixers: [],
+  });
+
+  const requestRef = useRef<number>(0);
+  const needsFitRef = useRef(true);
+  const hasInitialFitRef = useRef(false);
+
   useEffect(() => {
     mediaMeasurementsRef.current = mediaMeasurements ?? {};
   }, [mediaMeasurements]);
 
+  // Handle media measurements updates (scaling) without full rebuild if possible, 
+  // currently we just let the object effect handle it or we can optimize.
+  // The original code handled it via effect. 
+  // We can keep the optimization:
   useEffect(() => {
     if (!mediaMeasurements) return;
     Object.entries(mediaMeasurements).forEach(([key, measurement]) => {
@@ -260,9 +298,10 @@ export function SceneViewer({ objects, mediaMeasurements, onMediaDimensionsChang
     });
   }, [mediaMeasurements]);
 
+  // 1. Init Effect: Setup Scene, Camera, Renderer, Loop
   useEffect(() => {
     const container = containerRef.current;
-    if (!container) return undefined;
+    if (!container) return;
 
     const width = container.clientWidth || 960;
     const height = container.clientHeight || 540;
@@ -288,7 +327,7 @@ export function SceneViewer({ objects, mediaMeasurements, onMediaDimensionsChang
     directional.position.set(5, 10, 5);
     scene.add(directional);
 
-    const grid = new THREE.GridHelper(40, 40, 0x475569, 0x1e293b);
+    const grid = new THREE.GridHelper(30, 30, 0x475569, 0x1e293b);
     scene.add(grid);
     const axes = new THREE.AxesHelper(2);
     scene.add(axes);
@@ -296,26 +335,151 @@ export function SceneViewer({ objects, mediaMeasurements, onMediaDimensionsChang
     const group = new THREE.Group();
     scene.add(group);
 
+    const clock = new THREE.Clock();
+
+    sceneContextRef.current = {
+      scene,
+      camera,
+      renderer,
+      controls,
+      group,
+      clock,
+      grid,
+    };
+
+    const renderLoop = () => {
+      const delta = clock.getDelta();
+
+      // Rotate info balls
+      resourcesRef.current.infoBallRotators.forEach(({ group: ballGroup, speed }) => {
+        if (speed !== 0) {
+          ballGroup.rotation.y += THREE.MathUtils.degToRad(speed) * delta;
+        }
+      });
+
+      // Update animations
+      resourcesRef.current.mixers.forEach((mixer) => mixer.update(delta));
+
+      controls.update();
+
+      // Camera fitting
+      if (needsFitRef.current) {
+        const box = new THREE.Box3().setFromObject(group);
+        if (!box.isEmpty()) {
+          const size = box.getSize(new THREE.Vector3());
+          const center = box.getCenter(new THREE.Vector3());
+          const maxSize = Math.max(size.x, size.y, size.z, 1);
+          const fitHeightDistance = maxSize / (2 * Math.tan((camera.fov * Math.PI) / 360));
+          const fitWidthDistance = fitHeightDistance / camera.aspect;
+          const distance = Math.max(fitHeightDistance, fitWidthDistance) + 2;
+
+          // Only fit if it's the first load or if we explicitly want to force fit (could happen on scene change)
+          // ideally we only fit once per scene load. 
+          // For now, let's respect needsFitRef but logic inside Update Effect controls it.
+          camera.position.set(center.x + distance, center.y + distance * 0.3, center.z + distance);
+          controls.target.copy(center);
+          controls.update();
+          needsFitRef.current = false;
+        }
+      }
+
+      renderer.render(scene, camera);
+      requestRef.current = requestAnimationFrame(renderLoop);
+    };
+    requestRef.current = requestAnimationFrame(renderLoop);
+
+    const handleResize = () => {
+      if (!container) return;
+      const newWidth = container.clientWidth || width;
+      const newHeight = container.clientHeight || height;
+      renderer.setSize(newWidth, newHeight);
+      camera.aspect = newWidth / newHeight;
+      camera.updateProjectionMatrix();
+    };
+    window.addEventListener("resize", handleResize);
+
+    return () => {
+      cancelAnimationFrame(requestRef.current);
+      window.removeEventListener("resize", handleResize);
+      controls.dispose();
+      renderer.dispose();
+      if (container.contains(renderer.domElement)) {
+        container.removeChild(renderer.domElement);
+      }
+      sceneContextRef.current = null;
+    };
+  }, []); // Run once on mount
+
+  const generationRef = useRef(0);
+
+  // Update ground grid position reactively
+  useEffect(() => {
+    const ctx = sceneContextRef.current;
+    if (!ctx) return;
+    const { grid } = ctx;
+    if (grid) {
+      grid.position.y = -(groundHeight ?? 0);
+    }
+  }, [groundHeight]);
+
+  // 2. Update Effect: Rebuild scene graph when objects change
+  useEffect(() => {
+    const ctx = sceneContextRef.current;
+    if (!ctx) return;
+    const { group } = ctx;
+
+    // Increment generation to invalidate previous async callbacks
+    generationRef.current += 1;
+    const currentGeneration = generationRef.current;
+
+    // Cleanup previous resources
+    const res = resourcesRef.current;
+    res.planeMeshes.forEach((mesh) => {
+      mesh.geometry?.dispose();
+      disposeMaterialOrArray(mesh.material);
+    });
+    res.gltfContainers.forEach((wrapper) => disposeObjectTree(wrapper));
+    res.videoEntries.forEach(({ texture, video }) => {
+      texture.dispose();
+      video.pause();
+      video.removeAttribute("src");
+      video.load();
+    });
+    // Reset lists
+    res.planeMeshes = [];
+    res.gltfContainers = [];
+    res.infoBallRotators = [];
+    res.videoEntries = [];
+    res.mixers = [];
+    mediaMeshRegistryRef.current = {};
+
+    // Clear group
+    group.clear();
+
+    // Re-init loaders if needed (or keep them persistent? keeping persistent is better but let's just new them or store in ref)
+    // To be safe and simple, let's create them here or lazily in ref.
     const textureLoader = new THREE.TextureLoader();
     textureLoader.setCrossOrigin("anonymous");
 
     const gltfLoader = new GLTFLoader();
-    const dracoLoader = new DRACOLoader();
-    dracoLoader.setDecoderPath(DRACO_DECODER_CDN);
-    gltfLoader.setDRACOLoader(dracoLoader);
+    if (!res.dracoLoader) {
+      const dracoLoader = new DRACOLoader();
+      dracoLoader.setDecoderPath(DRACO_DECODER_CDN);
+      res.dracoLoader = dracoLoader;
+    }
+    gltfLoader.setDRACOLoader(res.dracoLoader);
 
-    const planeMeshes: THREE.Mesh[] = [];
-    const gltfContainers: THREE.Object3D[] = [];
-    const infoBallRotators: Array<{ group: THREE.Group; speed: number }> = [];
-    const videoEntries: Array<{ texture: THREE.VideoTexture; video: HTMLVideoElement }> = [];
-    const upVector = new THREE.Vector3(0, 1, 0);
+    // Helpers
     const degToRad = THREE.MathUtils.degToRad;
-    const clock = new THREE.Clock();
-    let needsFit = true;
+    const upVector = new THREE.Vector3(0, 1, 0);
+
     const reportMediaDimensions = (objectKey?: string, texture?: THREE.Texture | null) => {
       if (!onMediaDimensionsChange || !objectKey || !texture) return;
       const dims = getMediaDimensions(texture);
       if (dims.width <= 1 || dims.height <= 1) return;
+      // We invoke callback, but this might cause re-render loop if not careful.
+      // The parent seems to handle it by checking if it changed.
+      // We should be careful. The original code did this.
       onMediaDimensionsChange({ objectKey, width: dims.width, height: dims.height });
     };
 
@@ -342,15 +506,19 @@ export function SceneViewer({ objects, mediaMeasurements, onMediaDimensionsChang
         const texture = new THREE.VideoTexture(video);
         texture.colorSpace = THREE.SRGBColorSpace;
         texture.needsUpdate = true;
+
         const notifyIfReady = () => {
           if (video.videoWidth > 1 && video.videoHeight > 1) {
+            if (generationRef.current !== currentGeneration) return;
             onReady?.(texture);
+            // cleanup listeners
             video.removeEventListener("loadedmetadata", notifyIfReady);
             video.removeEventListener("loadeddata", notifyIfReady);
             video.removeEventListener("canplay", notifyIfReady);
             video.removeEventListener("timeupdate", notifyIfReady);
           }
         };
+
         const playPromise = video.play();
         if (playPromise) {
           playPromise.catch(() => {
@@ -358,7 +526,8 @@ export function SceneViewer({ objects, mediaMeasurements, onMediaDimensionsChang
             video.play().catch(() => undefined);
           });
         }
-        videoEntries.push({ texture, video });
+        res.videoEntries.push({ texture, video });
+
         if (video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
           notifyIfReady();
         }
@@ -384,7 +553,6 @@ export function SceneViewer({ objects, mediaMeasurements, onMediaDimensionsChang
         onTextureReady?.(null);
         return;
       }
-
       if (isVideoLike(assetUrl)) {
         const videoTexture = createVideoTexture(assetUrl, onTextureReady);
         if (videoTexture) {
@@ -405,6 +573,10 @@ export function SceneViewer({ objects, mediaMeasurements, onMediaDimensionsChang
       textureLoader.load(
         assetUrl,
         (texture) => {
+          if (generationRef.current !== currentGeneration) {
+            texture.dispose();
+            return;
+          }
           texture.colorSpace = THREE.SRGBColorSpace;
           const texturedMaterial = new THREE.MeshBasicMaterial({
             map: texture,
@@ -419,24 +591,8 @@ export function SceneViewer({ objects, mediaMeasurements, onMediaDimensionsChang
         undefined,
         () => {
           onTextureReady?.(null);
-        },
+        }
       );
-    };
-
-    const fitCameraToObjects = () => {
-      if (!needsFit) return;
-      const box = new THREE.Box3().setFromObject(group);
-      if (box.isEmpty()) return;
-      const size = box.getSize(new THREE.Vector3());
-      const center = box.getCenter(new THREE.Vector3());
-      const maxSize = Math.max(size.x, size.y, size.z, 1);
-      const fitHeightDistance = maxSize / (2 * Math.tan((camera.fov * Math.PI) / 360));
-      const fitWidthDistance = fitHeightDistance / camera.aspect;
-      const distance = Math.max(fitHeightDistance, fitWidthDistance) + 2;
-      camera.position.set(center.x + distance, center.y + distance * 0.3, center.z + distance);
-      controls.target.copy(center);
-      controls.update();
-      needsFit = false;
     };
 
     const addPlaneObject = (
@@ -453,7 +609,7 @@ export function SceneViewer({ objects, mediaMeasurements, onMediaDimensionsChang
         side: THREE.DoubleSide,
       });
       const mesh = new THREE.Mesh(geometry, material);
-      planeMeshes.push(mesh);
+      res.planeMeshes.push(mesh);
       group.add(mesh);
 
       const location = getSafeLocation(object);
@@ -463,7 +619,9 @@ export function SceneViewer({ objects, mediaMeasurements, onMediaDimensionsChang
       const updateScale = (texture?: THREE.Texture | null) => {
         const dims = computeNormalizedDimensions(texture, dimensionHint);
         mesh.scale.set(dims.width * zoom.x, dims.height * zoom.y, zoom.z);
-        needsFit = true;
+        // We do NOT set needsFit=true here on generic updates to avoid camera jumping
+        // only if this is the initial load of the scene could we consider it, 
+        // but let's stick to "don't jump" for now.
       };
 
       updateScale();
@@ -473,20 +631,16 @@ export function SceneViewer({ objects, mediaMeasurements, onMediaDimensionsChang
       }
 
       if (assetUrl) {
-        applyMediaMaterial(
-          mesh,
-          assetUrl,
-          object.transparency ?? 1,
-          (texture) => {
-            if (texture) {
-              reportMediaDimensions(objectKey, texture);
-              updateScale(texture);
-            } else {
-              updateScale();
-            }
-          },
-        );
+        applyMediaMaterial(mesh, assetUrl, object.transparency ?? 1, (texture) => {
+          if (texture) {
+            reportMediaDimensions(objectKey, texture);
+            updateScale(texture);
+          } else {
+            updateScale();
+          }
+        });
       } else if (dimensionHint?.width && dimensionHint?.height && objectKey) {
+        // If we already have dimensions, report them to ensure consistency
         onMediaDimensionsChange?.({
           objectKey,
           width: dimensionHint.width,
@@ -498,30 +652,41 @@ export function SceneViewer({ objects, mediaMeasurements, onMediaDimensionsChang
     const addGlbObject = (object: ArObject, assetUrl: string, objectKey: string | undefined, dimensionHint: DimensionHint) => {
       const location = getSafeLocation(object);
       const zoom = getSafeZoom(object);
-        gltfLoader.load(
-          assetUrl,
-          (gltf: GltfLoadResult) => {
-          const wrapper = new THREE.Group();
-          const root = gltf.scene ?? new THREE.Group();
-          wrapper.add(root);
-          gltfContainers.push(wrapper);
-          group.add(wrapper);
 
-          const box = new THREE.Box3().setFromObject(root);
-          if (!box.isEmpty()) {
-            const center = box.getCenter(new THREE.Vector3());
-            root.position.sub(center);
-          }
+      gltfLoader.load(assetUrl, (gltf: GltfLoadResult) => {
+        // Check if component still mounted AND if this request is from current generation
+        if (!sceneContextRef.current || generationRef.current !== currentGeneration) return;
 
-          applyTransform(wrapper, location, degToRad);
-          wrapper.scale.multiply(new THREE.Vector3(zoom.x, zoom.y, zoom.z));
-          needsFit = true;
-        },
-        undefined,
-        () => {
-          addPlaneObject(object, objectKey, dimensionHint, assetUrl);
-        },
-      );
+        const wrapper = new THREE.Group();
+        const root = gltf.scene ?? new THREE.Group();
+        wrapper.add(root);
+        res.gltfContainers.push(wrapper);
+        group.add(wrapper);
+
+        // Respect authored origin - remove centering logic
+        // const box = new THREE.Box3().setFromObject(root);
+        // if (!box.isEmpty()) {
+        //   const center = box.getCenter(new THREE.Vector3());
+        //   root.position.sub(center);
+        // }
+
+        applyTransform(wrapper, location, degToRad);
+        wrapper.scale.multiply(new THREE.Vector3(zoom.x, zoom.y, zoom.z));
+
+        // Handle Animations
+        if (gltf.animations && gltf.animations.length > 0) {
+          const mixer = new THREE.AnimationMixer(root);
+          gltf.animations.forEach((clip) => {
+            mixer.clipAction(clip).play();
+          });
+          res.mixers.push(mixer);
+        }
+
+        // Again, avoid auto-fitting on load to prevent jumps
+      }, undefined, () => {
+        // fallback to plane
+        addPlaneObject(object, objectKey, dimensionHint, assetUrl);
+      });
     };
 
     const addInfoBallObject = (object: ArObject, objectKey: string | undefined) => {
@@ -535,8 +700,11 @@ export function SceneViewer({ objects, mediaMeasurements, onMediaDimensionsChang
       const zoom = getSafeZoom(object);
       applyTransform(wrapper, location, degToRad);
       wrapper.scale.multiply(new THREE.Vector3(zoom.x, zoom.y, zoom.z));
-      infoBallRotators.push({ group: infoBallGroup, speed: config.speed });
+      res.infoBallRotators.push({ group: infoBallGroup, speed: config.speed });
 
+      // ... (rest of info ball logic same as before) ...
+      // For brevity I'll assume the logic for building info ball points matches the original
+      // I need to copy the loop logic carefully.
       const angleStep = (2 * Math.PI) / config.faceCount;
       const verticalSpacing = config.floorHeight + config.floorGap;
       const lowestCenterY = -((config.floorCount - 1) * verticalSpacing) / 2;
@@ -556,25 +724,22 @@ export function SceneViewer({ objects, mediaMeasurements, onMediaDimensionsChang
             color: DEFAULT_COLOR,
             transparent: true,
             opacity: object.transparency ?? 1,
-            side: THREE.DoubleSide,
+            side: THREE.DoubleSide
           });
           const mesh = new THREE.Mesh(geometry, material);
-          planeMeshes.push(mesh);
+          res.planeMeshes.push(mesh);
           infoBallGroup.add(mesh);
 
           const faceAngle = face * angleStep;
           const radialDir = new THREE.Vector3(Math.cos(faceAngle), 0, Math.sin(faceAngle));
           const tangentAxis = radialDir.clone().cross(upVector).normalize();
-          const tiltAxis =
-            Number.isFinite(angleX) && angleX !== 0 && tangentAxis.lengthSq() < 1e-6
-              ? new THREE.Vector3(1, 0, 0)
-              : tangentAxis;
+          const tiltAxis = Number.isFinite(angleX) && angleX !== 0 && tangentAxis.lengthSq() < 1e-6
+            ? new THREE.Vector3(1, 0, 0)
+            : tangentAxis;
 
-          const rotatedRadial =
-            tiltAxis.lengthSq() > 0 ? radialDir.clone().applyAxisAngle(tiltAxis, angleX) : radialDir.clone();
+          const rotatedRadial = tiltAxis.lengthSq() > 0 ? radialDir.clone().applyAxisAngle(tiltAxis, angleX) : radialDir.clone();
           const inwardNormal = rotatedRadial.clone().negate().normalize();
-          const planeUp =
-            tiltAxis.lengthSq() > 0 ? upVector.clone().applyAxisAngle(tiltAxis, angleX).normalize() : upVector.clone();
+          const planeUp = tiltAxis.lengthSq() > 0 ? upVector.clone().applyAxisAngle(tiltAxis, angleX).normalize() : upVector.clone();
           const planeRight = new THREE.Vector3().crossVectors(planeUp, inwardNormal).normalize();
 
           const orientationMatrix = new THREE.Matrix4().makeBasis(planeRight, planeUp, inwardNormal);
@@ -582,27 +747,20 @@ export function SceneViewer({ objects, mediaMeasurements, onMediaDimensionsChang
           mesh.position.set(radialDir.x * radius, layerCenterY, radialDir.z * radius);
 
           if (textureUrl) {
-            applyMediaMaterial(
-              mesh,
-              textureUrl,
-              object.transparency ?? 1,
-              (texture) => {
-                if (texture) {
-                  reportMediaDimensions(objectKey, texture);
-                }
-              },
-            );
+            applyMediaMaterial(mesh, textureUrl, object.transparency ?? 1, (texture) => {
+              if (texture) reportMediaDimensions(objectKey, texture);
+            });
           }
         }
       }
-
-      needsFit = true;
     };
 
+    // Build Scene
     objects.forEach((object, index) => {
       const objectKey = getSceneObjectKey(object, index);
       const measurement = objectKey ? mediaMeasurementsRef.current[objectKey] : undefined;
       const dimensionHint = getTextureDimensionHint(object, measurement);
+
       if (object.model?.type === 13) {
         addInfoBallObject(object, objectKey);
         return;
@@ -616,54 +774,14 @@ export function SceneViewer({ objects, mediaMeasurements, onMediaDimensionsChang
       }
     });
 
-    let animationId = 0;
-    const renderLoop = () => {
-      const delta = clock.getDelta();
-      infoBallRotators.forEach(({ group: ballGroup, speed }) => {
-        if (speed !== 0) {
-          ballGroup.rotation.y += THREE.MathUtils.degToRad(speed) * delta;
-        }
-      });
-      controls.update();
-      fitCameraToObjects();
-      renderer.render(scene, camera);
-      animationId = requestAnimationFrame(renderLoop);
-    };
-    renderLoop();
+    // Handle fitting logic
+    // If this is the FIRST time we have objects, enable fit
+    if (!hasInitialFitRef.current && objects.length > 0) {
+      needsFitRef.current = true;
+      hasInitialFitRef.current = true;
+    }
 
-    const handleResize = () => {
-      if (!container) return;
-      const newWidth = container.clientWidth || width;
-      const newHeight = container.clientHeight || height;
-      renderer.setSize(newWidth, newHeight);
-      camera.aspect = newWidth / newHeight;
-      camera.updateProjectionMatrix();
-      needsFit = true;
-    };
-
-    window.addEventListener("resize", handleResize);
-
-    return () => {
-      cancelAnimationFrame(animationId);
-      window.removeEventListener("resize", handleResize);
-      controls.dispose();
-      planeMeshes.forEach((mesh) => {
-        mesh.geometry.dispose();
-        disposeMaterialOrArray(mesh.material);
-      });
-      gltfContainers.forEach((wrapper) => disposeObjectTree(wrapper));
-      videoEntries.forEach(({ texture, video }) => {
-        texture.dispose();
-        video.pause();
-        video.removeAttribute("src");
-        video.load();
-      });
-      mediaMeshRegistryRef.current = {};
-      dracoLoader.dispose();
-      renderer.dispose();
-      container.removeChild(renderer.domElement);
-    };
-  }, [objects, onMediaDimensionsChange]);
+  }, [objects, onMediaDimensionsChange]); // Re-run when object list or dimensions listener changes
 
   return <div ref={containerRef} className="h-[480px] w-full overflow-hidden rounded-lg border border-slate-200 bg-slate-900" />;
 }

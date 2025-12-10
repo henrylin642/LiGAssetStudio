@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { GalleryAssetPicker } from "@/components/gallery-asset-picker";
 import { PreviewImage } from "@/components/preview/preview-image";
@@ -76,11 +77,11 @@ const mediaKindToAssetType = (kind: MediaInfo["kind"]): AssetType | null => {
 const getAssetDimensions = (asset: Asset) => {
   const meta = asset.meta as
     | {
-        width?: number;
-        height?: number;
-        image?: { width?: number; height?: number };
-        video?: { width?: number; height?: number };
-      }
+      width?: number;
+      height?: number;
+      image?: { width?: number; height?: number };
+      video?: { width?: number; height?: number };
+    }
     | undefined;
   const candidates = [
     { width: (asset as { width?: number }).width, height: (asset as { height?: number }).height },
@@ -103,11 +104,11 @@ const inferTextureDimension = (texture: ArObjectTexture | null | undefined) => {
   if (!texture || typeof texture !== "object") return { width: undefined, height: undefined };
   const meta = (texture as { meta?: unknown }).meta as
     | {
-        width?: number;
-        height?: number;
-        image?: { width?: number; height?: number };
-        video?: { width?: number; height?: number };
-      }
+      width?: number;
+      height?: number;
+      image?: { width?: number; height?: number };
+      video?: { width?: number; height?: number };
+    }
     | undefined;
   const candidates = [
     { width: (texture as { width?: number }).width, height: (texture as { height?: number }).height },
@@ -171,6 +172,12 @@ export default function SceneViewPage() {
   const [replacing, setReplacing] = useState(false);
   const [replaceError, setReplaceError] = useState<string | null>(null);
 
+  // Use any to allow string intermediate values for better UX (negative, decimals)
+  const [edits, setEdits] = useState<Record<string, any>>({});
+  const [appliedEdits, setAppliedEdits] = useState<Record<string, any>>({});
+  const [saving, setSaving] = useState(false);
+  const [lightTagHeight, setLightTagHeight] = useState("1.8");
+
   const handleMediaDimensionsChange = useCallback(
     (payload: { objectKey: string; width?: number; height?: number }) => {
       if (!payload.objectKey) return;
@@ -191,6 +198,8 @@ export default function SceneViewPage() {
   const handleSceneChange = useCallback((next: number | undefined) => {
     setSelectedSceneIdState(next);
     setMeasuredMedia({});
+    setEdits({});
+    setAppliedEdits({});
   }, []);
 
   const sceneObjectsQuery = useQuery<ArObject[], Error>({
@@ -238,8 +247,21 @@ export default function SceneViewPage() {
   const displayObjects = useMemo(() => {
     return normalizedObjects.map((object) => {
       const measured = measuredMedia[object.sceneKey];
+      const edit = edits[object.id ?? ""];
+
+      const mergedLocation = {
+        ...object.location,
+        ...(edit?.location ?? {}),
+      };
+      const mergedZoom = {
+        ...object.zoom,
+        ...(edit?.zoom ?? {}),
+      };
+
       return {
         ...object,
+        location: mergedLocation,
+        zoom: mergedZoom,
         mediaInfo: {
           ...object.mediaInfo,
           width: measured?.width ?? object.mediaInfo.width,
@@ -247,12 +269,49 @@ export default function SceneViewPage() {
         },
       };
     });
-  }, [normalizedObjects, measuredMedia]);
+  }, [normalizedObjects, measuredMedia, edits]);
+
+  const viewerObjects = useMemo(() => {
+    return normalizedObjects.map((object) => {
+      const measured = measuredMedia[object.sceneKey];
+      const edit = appliedEdits[object.id ?? ""];
+
+      const parseValue = (val: any, fallback: number) => {
+        const num = parseFloat(val);
+        return Number.isFinite(num) ? num : fallback;
+      };
+
+      const mergedLocation = {
+        x: parseValue(edit?.location?.x, object.location.x),
+        y: parseValue(edit?.location?.y, object.location.y),
+        z: parseValue(edit?.location?.z, object.location.z),
+        rotate_x: parseValue(edit?.location?.rotate_x, object.location.rotate_x),
+        rotate_y: parseValue(edit?.location?.rotate_y, object.location.rotate_y),
+        rotate_z: parseValue(edit?.location?.rotate_z, object.location.rotate_z),
+      };
+      const mergedZoom = {
+        x: parseValue(edit?.zoom?.x, object.zoom.x),
+        y: parseValue(edit?.zoom?.y, object.zoom.y),
+        z: parseValue(edit?.zoom?.z, object.zoom.z),
+      };
+
+      return {
+        ...object,
+        location: mergedLocation,
+        zoom: mergedZoom,
+        mediaInfo: {
+          ...object.mediaInfo,
+          width: measured?.width ?? object.mediaInfo.width,
+          height: measured?.height ?? object.mediaInfo.height,
+        },
+      };
+    });
+  }, [normalizedObjects, measuredMedia, appliedEdits]);
 
   useEffect(() => {
     const requiredKeys = new Set<string>();
 
-    displayObjects.forEach((object) => {
+    viewerObjects.forEach((object) => {
       const measured =
         object.mediaInfo.width && object.mediaInfo.width > 1 && object.mediaInfo.height && object.mediaInfo.height > 1;
       const existing = mediaProbeRefs.current[object.sceneKey];
@@ -348,7 +407,7 @@ export default function SceneViewPage() {
         delete mediaProbeRefs.current[key];
       }
     });
-  }, [displayObjects, handleMediaDimensionsChange]);
+  }, [viewerObjects, handleMediaDimensionsChange]);
 
   useEffect(() => {
     return () => {
@@ -369,12 +428,12 @@ export default function SceneViewPage() {
   }, [replaceTarget]);
 
   const replaceTypeLabel = useMemo(() => {
-    if (!replaceAssetType) return "媒體";
-    if (replaceAssetType === "image") return "圖片";
-    if (replaceAssetType === "video") return "影片";
-    if (replaceAssetType === "model") return "3D 模型";
-    if (replaceAssetType === "audio") return "音訊";
-    return "媒體";
+    if (!replaceAssetType) return "media";
+    if (replaceAssetType === "image") return "image";
+    if (replaceAssetType === "video") return "video";
+    if (replaceAssetType === "model") return "3D model";
+    if (replaceAssetType === "audio") return "audio";
+    return "media";
   }, [replaceAssetType]);
 
   const buildReplacementPayload = useCallback((object: NormalizedArObject, asset: Asset) => {
@@ -382,11 +441,11 @@ export default function SceneViewPage() {
     const applyTexture = (sourceTexture?: ArObjectTexture | null) => {
       const baseMeta = (sourceTexture as { meta?: unknown })?.meta as
         | {
-            width?: number;
-            height?: number;
-            image?: { width?: number; height?: number };
-            video?: { width?: number; height?: number };
-          }
+          width?: number;
+          height?: number;
+          image?: { width?: number; height?: number };
+          video?: { width?: number; height?: number };
+        }
         | undefined;
       const nextMeta =
         asset.type === "image"
@@ -429,7 +488,7 @@ export default function SceneViewPage() {
           <div
             className={`${cellWidth} flex aspect-square items-center justify-center rounded-md border border-dashed border-slate-200 text-[11px] text-slate-400`}
           >
-            無預覽
+            No Preview
           </div>
         );
       }
@@ -481,7 +540,7 @@ export default function SceneViewPage() {
   const handleStartReplace = useCallback((object: NormalizedArObject) => {
     const targetType = mediaKindToAssetType(object.mediaInfo.kind);
     if (!targetType) {
-      setReplaceError("無法辨識此物件的媒體類型，無法更換。");
+      setReplaceError("Unable to identify object media type, cannot replace.");
       return;
     }
     setReplaceTarget(object);
@@ -504,7 +563,7 @@ export default function SceneViewPage() {
       if (!replaceTarget) return;
       const targetType = mediaKindToAssetType(replaceTarget.mediaInfo.kind);
       if (targetType && asset.type !== targetType) {
-        setReplaceError("只能以相同類型的 Gallery 資產進行更換。");
+        setReplaceError("Can only replace with Gallery assets of the same type.");
         return;
       }
 
@@ -518,14 +577,14 @@ export default function SceneViewPage() {
         });
         if (!response.ok) {
           const body = await response.json().catch(() => ({}));
-          throw new Error((body as { error?: string }).error ?? "更換失敗，請稍後再試。");
+          throw new Error((body as { error?: string }).error ?? "Replacement failed, please try again later.");
         }
         await sceneObjectsQuery.refetch();
       } catch (error) {
         if (error instanceof Error) {
           setReplaceError(error.message);
         } else {
-          setReplaceError("更換失敗，請稍後再試。");
+          setReplaceError("Replacement failed, please try again later.");
         }
       } finally {
         setReplacing(false);
@@ -536,13 +595,164 @@ export default function SceneViewPage() {
     [api, buildReplacementPayload, replaceTarget, sceneObjectsQuery],
   );
 
+  const handleEdit = useCallback((id: number, field: "location" | "zoom" | "name", axis: string, value: string) => {
+    // Allow any input for better UX (e.g. "1.", "-", "")
+    setEdits((prev) => {
+      const currentEdit = prev[id] ?? {};
+
+      if (field === "name") {
+        return {
+          ...prev,
+          [id]: {
+            ...currentEdit,
+            name: value
+          }
+        };
+      }
+
+      const group = (currentEdit as any)[field] ?? {};
+      return {
+        ...prev,
+        [id]: {
+          ...currentEdit,
+          [field]: {
+            ...group,
+            [axis]: value,
+          },
+        },
+      };
+    });
+  }, []);
+
+  const handleDelete = useCallback(async (id: number) => {
+    if (!confirm("Are you sure you want to delete this object? This action cannot be undone.")) return;
+    try {
+      const response = await api(`/ar-objects/${id}`, { method: "DELETE" });
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        throw new Error((body as { error?: string }).error ?? "Delete failed");
+      }
+      await sceneObjectsQuery.refetch();
+    } catch (e) {
+      console.error(e);
+      alert("Failed to delete object");
+    }
+  }, [api, sceneObjectsQuery]);
+
+  const handleSave = useCallback(async () => {
+    if (Object.keys(edits).length === 0) return;
+    setSaving(true);
+    try {
+      const promises = Object.entries(edits).map(async ([key, edit]) => {
+        const id = Number(key);
+        const original = normalizedObjects.find(o => o.id === id);
+        if (!original) return;
+
+        // Construct payload merging original with edit
+        // We need to send the full body or at least what the API expects.
+        // Assuming API handles partial update or we merge everything.
+        // Based on `buildReplacementPayload` earlier, we might need to send `model` structure if texturing,
+        // but here we are updating location/zoom.
+        // Let's assume PATCH supports `location` and `zoom` fields at top level or we check DTO.
+        // Looking at `dto.ts` earlier, `ArObject` has `location` and `zoom`.
+        // Ideally we just send what changed.
+
+        const payload: Record<string, any> = {};
+
+        // Helper to strip nones/empty - mimicking the Python script
+        const stripNones = (value: any): any => {
+          if (value === null || value === undefined) return undefined;
+          if (Array.isArray(value)) {
+            const cleaned = value.map(stripNones).filter(v => v !== undefined);
+            return cleaned.length > 0 ? cleaned : undefined;
+          }
+          if (typeof value === "object") {
+            const cleaned: Record<string, any> = {};
+            Object.entries(value).forEach(([k, v]) => {
+              const cv = stripNones(v);
+              if (cv !== undefined && cv !== "" && !(Array.isArray(cv) && cv.length === 0) && !(typeof cv === "object" && Object.keys(cv).length === 0)) {
+                cleaned[k] = cv;
+              }
+            });
+            return Object.keys(cleaned).length > 0 ? cleaned : undefined;
+          }
+          return value === "" ? undefined : value;
+        };
+
+        const parseSub = (sub: Record<string, any> | undefined, originalSub: Record<string, number>) => {
+          if (!sub) return { ...originalSub };
+          const result: Record<string, number> = { ...originalSub };
+          Object.entries(sub).forEach(([k, v]) => {
+            const str = String(v);
+            const parsed = parseFloat(str);
+            if (Number.isFinite(parsed)) {
+              result[k] = parsed;
+            }
+          });
+          return result;
+        };
+
+        const nextLocation = parseSub(edit.location, original.location ?? { x: 0, y: 0, z: 0, rotate_x: 0, rotate_y: 0, rotate_z: 0 });
+        const nextZoom = parseSub(edit.zoom, original.zoom ?? { x: 1, y: 1, z: 1 });
+
+        // Construct full payload mimicking Python script structure
+        const rawPayload = {
+          location: nextLocation,
+          zoom: nextZoom,
+          model: original.model ?? {},
+          transparency: original.transparency ?? 1.0,
+          events: original.events ?? [],
+          // Include other optional fields if present in original
+          name: edit.name ?? original.name, // Use edited name if present
+          group: original.group,
+          scene_id: original.scene_id,
+        };
+
+        // Clean it
+        const finalPayload = stripNones(rawPayload) ?? {};
+
+        // Ensure required keys are present even if empty (Python script ensures location/zoom/model/events are dicts/list)
+        if (!finalPayload.location) finalPayload.location = nextLocation; // location is always full
+        if (!finalPayload.zoom) finalPayload.zoom = nextZoom; // zoom is always full
+        if (!finalPayload.model && original.model) finalPayload.model = stripNones(original.model);
+        if (!finalPayload.model) finalPayload.model = {};
+
+        console.log("Saving object (full)", id, finalPayload);
+
+        const response = await api(`/ar-objects/${id}`, {
+          method: "PATCH",
+          body: JSON.stringify(finalPayload),
+        });
+        if (!response.ok) {
+          throw new Error(`Failed to update object ${id}`);
+        }
+      });
+
+      await Promise.all(promises);
+      setEdits({});
+      setAppliedEdits({});
+      await sceneObjectsQuery.refetch();
+    } catch (error) {
+      console.error(error);
+      alert("Save failed, please check network or try again.");
+    } finally {
+      setSaving(false);
+    }
+  }, [api, edits, normalizedObjects, sceneObjectsQuery]);
+
+  const hasEdits = Object.keys(edits).length > 0;
+
+  const handleApplyPreview = useCallback(() => {
+    setAppliedEdits(edits);
+  }, [edits]);
+
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold text-slate-900">Scene View</h1>
           <p className="text-sm text-slate-500">
-            將 Scene 的所有 AR 物件放入 3D 場景，依照座標與旋轉呈現。圖片會先正規化成長邊 1m，再套用 zoom。
+            Place all AR objects from the Scene into the 3D scene, rendering them according to coordinates and rotation. Images will first be normalized to a long side of 1m before applying zoom.
           </p>
         </div>
         <div className="flex gap-2">
@@ -556,13 +766,27 @@ export default function SceneViewPage() {
           >
             {sceneObjectsQuery.isFetching ? "Loading…" : "Reload Objects"}
           </Button>
+          <Button
+            disabled={!hasEdits || saving}
+            variant="outline"
+            onClick={handleApplyPreview}
+          >
+            Preview Change
+          </Button>
+          <Button
+            disabled={!hasEdits || saving}
+            onClick={handleSave}
+            variant={hasEdits ? "default" : "outline"}
+          >
+            {saving ? "Saving…" : "Save Changes"}
+          </Button>
         </div>
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle>選擇 Scene</CardTitle>
-          <CardDescription>載入後即可在下方 3D 介面檢視所有物件。</CardDescription>
+          <CardTitle>Choose a Scene</CardTitle>
+          <CardDescription>After loading, you can view all objects in the 3D interface below.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
@@ -571,7 +795,7 @@ export default function SceneViewPage() {
                 scenes={scenesQuery.data ?? []}
                 value={selectedSceneId}
                 onChange={(next) => handleSceneChange(next)}
-                placeholder="選擇 Scene"
+                placeholder="Choose a Scene"
               />
             </div>
             <Button
@@ -579,17 +803,27 @@ export default function SceneViewPage() {
               onClick={() => sceneObjectsQuery.refetch()}
               disabled={!selectedSceneId || sceneObjectsQuery.isFetching}
             >
-              {sceneObjectsQuery.isFetching ? "載入中" : "載入物件"}
+              {sceneObjectsQuery.isFetching ? "Loading..." : "Load Objects"}
             </Button>
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-slate-500 whitespace-nowrap">Light Tag Height (m):</span>
+              <Input
+                type="number"
+                step="0.1"
+                className="w-20"
+                value={lightTagHeight}
+                onChange={e => setLightTagHeight(e.target.value)}
+              />
+            </div>
           </div>
           {selectedSceneId ? (
             <p className="text-xs text-slate-500">
               Scene #
               {selectedSceneId}
-              {sceneName ? <> · {sceneName}</> : null} · 共 {displayObjects.length} 個物件
+              {sceneName ? <> · {sceneName}</> : null} · Total of {displayObjects.length} objects
             </p>
           ) : (
-            <p className="text-xs text-slate-500">請選擇 Scene。</p>
+            <p className="text-xs text-slate-500">Please choose a Scene.</p>
           )}
         </CardContent>
       </Card>
@@ -606,30 +840,31 @@ export default function SceneViewPage() {
       {selectedSceneId ? (
         sceneObjectsQuery.isLoading ? (
           <Card>
-            <CardContent className="py-12 text-center text-sm text-slate-500">正在載入 Scene 物件…</CardContent>
+            <CardContent className="py-12 text-center text-sm text-slate-500">Loading Scene objects...</CardContent>
           </Card>
         ) : displayObjects.length > 0 ? (
           <>
             <Card>
               <CardHeader>
-                <CardTitle>3D 場景</CardTitle>
+                <CardTitle>3D Scene</CardTitle>
                 <CardDescription>
-                  拖曳旋轉、滾輪縮放。Origin 顯示為 (0,0,0)，方格為 1m × 1m。
+                  Drag to rotate, scroll to zoom. Origin displayed as (0,0,0), grid is 1m × 1m.
                 </CardDescription>
               </CardHeader>
               <CardContent>
                 <SceneViewer
-                  objects={normalizedObjects}
+                  objects={viewerObjects}
                   mediaMeasurements={measuredMedia}
                   onMediaDimensionsChange={handleMediaDimensionsChange}
+                  groundHeight={parseFloat(lightTagHeight) || 0}
                 />
               </CardContent>
             </Card>
 
             <Card>
               <CardHeader>
-                <CardTitle>物件列表</CardTitle>
-                <CardDescription>座標與旋轉為 LiG Cloud 原始值，並附上資源格式與原始尺寸。</CardDescription>
+                <CardTitle>Object List</CardTitle>
+                <CardDescription>Coordinates and rotation are LiG Cloud raw values, accompanied by resource format and original dimensions.</CardDescription>
               </CardHeader>
               <CardContent className="overflow-auto">
                 <table className="min-w-full table-fixed border-collapse text-xs">
@@ -643,7 +878,7 @@ export default function SceneViewPage() {
                       <th className="px-3 py-2 text-left">Position (x,y,z)</th>
                       <th className="px-3 py-2 text-left">Rotate (x°,y°,z°)</th>
                       <th className="px-3 py-2 text-left">Zoom</th>
-                      <th className="px-3 py-2 text-left">更換內容</th>
+                      <th className="px-3 py-2 text-left">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -651,7 +886,13 @@ export default function SceneViewPage() {
                       <tr key={object.id} className="border-b border-slate-100 last:border-b-0">
                         <td className="px-3 py-2 align-middle">{renderObjectPreview(object)}</td>
                         <td className="px-3 py-2 font-mono text-slate-500">{object.id}</td>
-                        <td className="px-3 py-2 text-slate-900">{object.name ?? "—"}</td>
+                        <td className="px-3 py-2 text-slate-900">
+                          <Input
+                            className="h-7 px-2 text-xs min-w-[120px]"
+                            value={object.name ?? ""}
+                            onChange={e => object.id && handleEdit(object.id, 'name', '', e.target.value)}
+                          />
+                        </td>
                         <td className="px-3 py-2 text-slate-600">
                           {object.mediaInfo.kind === "video"
                             ? `Video${object.mediaInfo.ext ? ` (.${object.mediaInfo.ext})` : ""}`
@@ -671,13 +912,61 @@ export default function SceneViewPage() {
                             : "—"}
                         </td>
                         <td className="px-3 py-2 font-mono text-[11px] text-slate-600">
-                          {`${object.location.x.toFixed(3)}, ${object.location.y.toFixed(3)}, ${object.location.z.toFixed(3)}`}
+                          <div className="flex gap-1 w-24">
+                            <Input
+                              className="h-6 px-1 text-[10px] w-8"
+                              value={object.location.x}
+                              onChange={e => object.id && handleEdit(object.id, 'location', 'x', e.target.value)}
+                            />
+                            <Input
+                              className="h-6 px-1 text-[10px] w-8"
+                              value={object.location.y}
+                              onChange={e => object.id && handleEdit(object.id, 'location', 'y', e.target.value)}
+                            />
+                            <Input
+                              className="h-6 px-1 text-[10px] w-8"
+                              value={object.location.z}
+                              onChange={e => object.id && handleEdit(object.id, 'location', 'z', e.target.value)}
+                            />
+                          </div>
                         </td>
                         <td className="px-3 py-2 font-mono text-[11px] text-slate-600">
-                          {`${object.location.rotate_x.toFixed(1)}, ${object.location.rotate_y.toFixed(1)}, ${object.location.rotate_z.toFixed(1)}`}
+                          <div className="flex gap-1 w-24">
+                            <Input
+                              className="h-6 px-1 text-[10px] w-8"
+                              value={object.location.rotate_x}
+                              onChange={e => object.id && handleEdit(object.id, 'location', 'rotate_x', e.target.value)}
+                            />
+                            <Input
+                              className="h-6 px-1 text-[10px] w-8"
+                              value={object.location.rotate_y}
+                              onChange={e => object.id && handleEdit(object.id, 'location', 'rotate_y', e.target.value)}
+                            />
+                            <Input
+                              className="h-6 px-1 text-[10px] w-8"
+                              value={object.location.rotate_z}
+                              onChange={e => object.id && handleEdit(object.id, 'location', 'rotate_z', e.target.value)}
+                            />
+                          </div>
                         </td>
                         <td className="px-3 py-2 font-mono text-[11px] text-slate-600">
-                          {`${object.zoom.x.toFixed(2)}, ${object.zoom.y.toFixed(2)}, ${object.zoom.z.toFixed(2)}`}
+                          <div className="flex gap-1 w-24">
+                            <Input
+                              className="h-6 px-1 text-[10px] w-8"
+                              value={object.zoom.x}
+                              onChange={e => object.id && handleEdit(object.id, 'zoom', 'x', e.target.value)}
+                            />
+                            <Input
+                              className="h-6 px-1 text-[10px] w-8"
+                              value={object.zoom.y}
+                              onChange={e => object.id && handleEdit(object.id, 'zoom', 'y', e.target.value)}
+                            />
+                            <Input
+                              className="h-6 px-1 text-[10px] w-8"
+                              value={object.zoom.z}
+                              onChange={e => object.id && handleEdit(object.id, 'zoom', 'z', e.target.value)}
+                            />
+                          </div>
                         </td>
                         <td className="px-3 py-2">
                           <div className="flex flex-col gap-1">
@@ -687,10 +976,18 @@ export default function SceneViewPage() {
                               disabled={replacing || mediaKindToAssetType(object.mediaInfo.kind) === null}
                               onClick={() => handleStartReplace(object)}
                             >
-                              {replacing && replaceTarget?.id === object.id ? "更換中…" : "更換內容"}
+                              {replacing && replaceTarget?.id === object.id ? "Replacing..." : "Change Object"}
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="destructive"
+                              className="h-7 text-xs"
+                              onClick={() => object.id && handleDelete(object.id)}
+                            >
+                              Delete
                             </Button>
                             {mediaKindToAssetType(object.mediaInfo.kind) === null ? (
-                              <p className="text-[11px] text-slate-400">無法辨識媒體類型</p>
+                              <p className="text-[11px] text-slate-400">Unknown media type</p>
                             ) : null}
                           </div>
                         </td>
@@ -704,13 +1001,13 @@ export default function SceneViewPage() {
         ) : (
           <Card>
             <CardContent className="py-12 text-center text-sm text-slate-500">
-              此 Scene 沒有任何 AR 物件。
+              This Scene has no AR objects.
             </CardContent>
           </Card>
         )
       ) : (
         <Card>
-          <CardContent className="py-12 text-center text-sm text-slate-500">選擇 Scene 後即可載入視覺化。</CardContent>
+          <CardContent className="py-12 text-center text-sm text-slate-500">Select a Scene to load visualization.</CardContent>
         </Card>
       )}
 
@@ -719,8 +1016,8 @@ export default function SceneViewPage() {
         onOpenChange={handleReplaceOpenChange}
         onSelect={handleSelectReplacement}
         type={replaceAssetType ?? "image"}
-        title={`選擇${replaceTypeLabel}`}
-        description={`僅能以 ${replaceTypeLabel} 資產替換目前物件`}
+        title={`Select ${replaceTypeLabel}`}
+        description={`Only replace current object with ${replaceTypeLabel} assets`}
       />
     </div>
   );
