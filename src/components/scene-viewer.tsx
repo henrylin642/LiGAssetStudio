@@ -19,6 +19,7 @@ export interface SceneViewerProps {
   mediaMeasurements?: Record<string, { width?: number; height?: number }>;
   onMediaDimensionsChange?: (payload: { objectKey: string; width?: number; height?: number }) => void;
   groundHeight?: number;
+  className?: string; // Allow overriding styles
 }
 
 type GltfLoadResult = {
@@ -234,7 +235,7 @@ const buildInfoBallConfig = (object: ArObject) => {
   };
 };
 
-export function SceneViewer({ objects, mediaMeasurements, onMediaDimensionsChange, groundHeight = 0 }: SceneViewerProps) {
+export function SceneViewer({ objects, mediaMeasurements, onMediaDimensionsChange, groundHeight = 0, className }: SceneViewerProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mediaMeasurementsRef = useRef<Record<string, { width?: number; height?: number }>>({});
   const mediaMeshRegistryRef = useRef<
@@ -783,5 +784,5 @@ export function SceneViewer({ objects, mediaMeasurements, onMediaDimensionsChang
 
   }, [objects, onMediaDimensionsChange]); // Re-run when object list or dimensions listener changes
 
-  return <div ref={containerRef} className="h-[480px] w-full overflow-hidden rounded-lg border border-slate-200 bg-slate-900" />;
+  return <div ref={containerRef} className={className ?? "h-[480px] w-full overflow-hidden rounded-lg border border-slate-200 bg-slate-900"} />;
 }

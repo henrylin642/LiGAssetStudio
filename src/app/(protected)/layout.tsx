@@ -22,7 +22,7 @@ export default function ProtectedLayout({ children }: { children: React.ReactNod
     <AuthGuard>
       <div className="flex min-h-screen flex-col">
         <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/90 backdrop-blur supports-[backdrop-filter]:bg-white/70">
-          <div className="mx-auto flex w-full max-w-6xl items-center justify-between gap-4 px-6 py-4">
+          <div className="mx-auto flex w-full items-center justify-between gap-4 px-6 py-4">
             <Link href="/" className="text-lg font-semibold tracking-tight text-slate-900">
               LiG Assets Studio
             </Link>
@@ -49,7 +49,7 @@ export default function ProtectedLayout({ children }: { children: React.ReactNod
             <UserMenu />
           </div>
         </header>
-        <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-6 px-6 py-8">
+        <main className="mx-auto flex w-full flex-1 flex-col gap-6 px-6 py-8">
           {children}
         </main>
       </div>

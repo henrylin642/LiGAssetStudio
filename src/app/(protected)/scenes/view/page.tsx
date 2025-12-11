@@ -843,16 +843,17 @@ export default function SceneViewPage() {
             <CardContent className="py-12 text-center text-sm text-slate-500">Loading Scene objects...</CardContent>
           </Card>
         ) : displayObjects.length > 0 ? (
-          <>
-            <Card>
-              <CardHeader>
+          <div className="flex flex-row gap-4 h-[800px] w-full">
+            <Card className="flex-[4] flex flex-col h-full overflow-hidden">
+              <CardHeader className="flex-none">
                 <CardTitle>3D Scene</CardTitle>
                 <CardDescription>
                   Drag to rotate, scroll to zoom. Origin displayed as (0,0,0), grid is 1m × 1m.
                 </CardDescription>
               </CardHeader>
-              <CardContent>
+              <CardContent className="flex-1 min-h-0 overflow-hidden relative">
                 <SceneViewer
+                  className="h-full w-full bg-slate-900"
                   objects={viewerObjects}
                   mediaMeasurements={measuredMedia}
                   onMediaDimensionsChange={handleMediaDimensionsChange}
@@ -861,39 +862,39 @@ export default function SceneViewPage() {
               </CardContent>
             </Card>
 
-            <Card>
-              <CardHeader>
+            <Card className="flex-[1] flex flex-col h-full overflow-hidden min-w-[300px]">
+              <CardHeader className="flex-none">
                 <CardTitle>Object List</CardTitle>
                 <CardDescription>Coordinates and rotation are LiG Cloud raw values, accompanied by resource format and original dimensions.</CardDescription>
               </CardHeader>
-              <CardContent className="overflow-auto">
+              <CardContent className="flex-1 min-h-0 overflow-auto">
                 <table className="min-w-full table-fixed border-collapse text-xs">
-                  <thead className="bg-slate-100 text-slate-600">
+                  <thead className="sticky top-0 z-10 bg-slate-100 text-slate-600 shadow-sm">
                     <tr>
-                      <th className="w-28 sm:w-32 px-3 py-2 text-left">Preview</th>
-                      <th className="px-3 py-2 text-left">ID</th>
-                      <th className="px-3 py-2 text-left">Name</th>
-                      <th className="px-3 py-2 text-left">Format</th>
-                      <th className="px-3 py-2 text-left">Media Info</th>
-                      <th className="px-3 py-2 text-left">Position (x,y,z)</th>
-                      <th className="px-3 py-2 text-left">Rotate (x°,y°,z°)</th>
-                      <th className="px-3 py-2 text-left">Zoom</th>
-                      <th className="px-3 py-2 text-left">Actions</th>
+                      <th className="w-20 sm:w-24 px-2 py-2 text-left">Preview</th>
+                      <th className="px-2 py-2 text-left">ID</th>
+                      <th className="px-2 py-2 text-left">Name</th>
+                      <th className="px-2 py-2 text-left">Format</th>
+                      <th className="px-2 py-2 text-left">Media Info</th>
+                      <th className="px-2 py-2 text-left">Position (x,y,z)</th>
+                      <th className="px-2 py-2 text-left">Rotate (x°,y°,z°)</th>
+                      <th className="px-2 py-2 text-left">Zoom</th>
+                      <th className="px-2 py-2 text-left">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
                     {displayObjects.map((object) => (
                       <tr key={object.id} className="border-b border-slate-100 last:border-b-0">
-                        <td className="px-3 py-2 align-middle">{renderObjectPreview(object)}</td>
-                        <td className="px-3 py-2 font-mono text-slate-500">{object.id}</td>
-                        <td className="px-3 py-2 text-slate-900">
+                        <td className="px-2 py-2 align-middle">{renderObjectPreview(object)}</td>
+                        <td className="px-2 py-2 font-mono text-slate-500">{object.id}</td>
+                        <td className="px-2 py-2 text-slate-900">
                           <Input
-                            className="h-7 px-2 text-xs min-w-[120px]"
+                            className="h-7 px-2 text-xs min-w-[100px]"
                             value={object.name ?? ""}
                             onChange={e => object.id && handleEdit(object.id, 'name', '', e.target.value)}
                           />
                         </td>
-                        <td className="px-3 py-2 text-slate-600">
+                        <td className="px-2 py-2 text-slate-600">
                           {object.mediaInfo.kind === "video"
                             ? `Video${object.mediaInfo.ext ? ` (.${object.mediaInfo.ext})` : ""}`
                             : object.mediaInfo.kind === "image"
@@ -906,69 +907,69 @@ export default function SceneViewPage() {
                                     ? `.${object.mediaInfo.ext}`
                                     : "—"}
                         </td>
-                        <td className="px-3 py-2 font-mono text-[11px] text-slate-600">
+                        <td className="px-2 py-2 font-mono text-[11px] text-slate-600">
                           {object.mediaInfo.width && object.mediaInfo.height
                             ? `${Math.round(object.mediaInfo.width)}×${Math.round(object.mediaInfo.height)} px`
                             : "—"}
                         </td>
-                        <td className="px-3 py-2 font-mono text-[11px] text-slate-600">
-                          <div className="flex gap-1 w-24">
+                        <td className="px-2 py-2 font-mono text-[11px] text-slate-600">
+                          <div className="flex gap-1 w-20">
                             <Input
-                              className="h-6 px-1 text-[10px] w-8"
+                              className="h-6 px-1 text-[10px] w-full"
                               value={object.location.x}
                               onChange={e => object.id && handleEdit(object.id, 'location', 'x', e.target.value)}
                             />
                             <Input
-                              className="h-6 px-1 text-[10px] w-8"
+                              className="h-6 px-1 text-[10px] w-full"
                               value={object.location.y}
                               onChange={e => object.id && handleEdit(object.id, 'location', 'y', e.target.value)}
                             />
                             <Input
-                              className="h-6 px-1 text-[10px] w-8"
+                              className="h-6 px-1 text-[10px] w-full"
                               value={object.location.z}
                               onChange={e => object.id && handleEdit(object.id, 'location', 'z', e.target.value)}
                             />
                           </div>
                         </td>
-                        <td className="px-3 py-2 font-mono text-[11px] text-slate-600">
-                          <div className="flex gap-1 w-24">
+                        <td className="px-2 py-2 font-mono text-[11px] text-slate-600">
+                          <div className="flex gap-1 w-20">
                             <Input
-                              className="h-6 px-1 text-[10px] w-8"
+                              className="h-6 px-1 text-[10px] w-full"
                               value={object.location.rotate_x}
                               onChange={e => object.id && handleEdit(object.id, 'location', 'rotate_x', e.target.value)}
                             />
                             <Input
-                              className="h-6 px-1 text-[10px] w-8"
+                              className="h-6 px-1 text-[10px] w-full"
                               value={object.location.rotate_y}
                               onChange={e => object.id && handleEdit(object.id, 'location', 'rotate_y', e.target.value)}
                             />
                             <Input
-                              className="h-6 px-1 text-[10px] w-8"
+                              className="h-6 px-1 text-[10px] w-full"
                               value={object.location.rotate_z}
                               onChange={e => object.id && handleEdit(object.id, 'location', 'rotate_z', e.target.value)}
                             />
                           </div>
                         </td>
-                        <td className="px-3 py-2 font-mono text-[11px] text-slate-600">
-                          <div className="flex gap-1 w-24">
+                        <td className="px-2 py-2 font-mono text-[11px] text-slate-600">
+                          <div className="flex gap-1 w-20">
                             <Input
-                              className="h-6 px-1 text-[10px] w-8"
+                              className="h-6 px-1 text-[10px] w-full"
                               value={object.zoom.x}
                               onChange={e => object.id && handleEdit(object.id, 'zoom', 'x', e.target.value)}
                             />
                             <Input
-                              className="h-6 px-1 text-[10px] w-8"
+                              className="h-6 px-1 text-[10px] w-full"
                               value={object.zoom.y}
                               onChange={e => object.id && handleEdit(object.id, 'zoom', 'y', e.target.value)}
                             />
                             <Input
-                              className="h-6 px-1 text-[10px] w-8"
+                              className="h-6 px-1 text-[10px] w-full"
                               value={object.zoom.z}
                               onChange={e => object.id && handleEdit(object.id, 'zoom', 'z', e.target.value)}
                             />
                           </div>
                         </td>
-                        <td className="px-3 py-2">
+                        <td className="px-2 py-2">
                           <div className="flex flex-col gap-1">
                             <Button
                               size="sm"
@@ -976,7 +977,7 @@ export default function SceneViewPage() {
                               disabled={replacing || mediaKindToAssetType(object.mediaInfo.kind) === null}
                               onClick={() => handleStartReplace(object)}
                             >
-                              {replacing && replaceTarget?.id === object.id ? "Replacing..." : "Change Object"}
+                              {replacing && replaceTarget?.id === object.id ? "..." : "Edit"}
                             </Button>
                             <Button
                               size="sm"
@@ -984,10 +985,10 @@ export default function SceneViewPage() {
                               className="h-7 text-xs"
                               onClick={() => object.id && handleDelete(object.id)}
                             >
-                              Delete
+                              Del
                             </Button>
                             {mediaKindToAssetType(object.mediaInfo.kind) === null ? (
-                              <p className="text-[11px] text-slate-400">Unknown media type</p>
+                              <p className="text-[11px] text-slate-400">Unknown</p>
                             ) : null}
                           </div>
                         </td>
@@ -997,7 +998,7 @@ export default function SceneViewPage() {
                 </table>
               </CardContent>
             </Card>
-          </>
+          </div>
         ) : (
           <Card>
             <CardContent className="py-12 text-center text-sm text-slate-500">
