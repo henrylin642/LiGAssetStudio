@@ -10,7 +10,7 @@ interface AssetGridProps {
 
 export function AssetGrid({ assets, selectedIds, onToggleAsset, onUploadFromCard }: AssetGridProps) {
   return (
-    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+    <div className="grid gap-4 grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8">
       {assets.map((asset) => (
         <AssetCard
           key={asset.id}
