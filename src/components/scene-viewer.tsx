@@ -267,6 +267,7 @@ export function SceneViewer({ objects, mediaMeasurements, onMediaDimensionsChang
     videoEntries: Array<{ texture: THREE.VideoTexture; video: HTMLVideoElement }>;
     dracoLoader: DRACOLoader | null;
     mixers: THREE.AnimationMixer[];
+    particleSystems: Array<(delta: number) => void>;
   }>({
     planeMeshes: [],
     gltfContainers: [],
@@ -274,6 +275,8 @@ export function SceneViewer({ objects, mediaMeasurements, onMediaDimensionsChang
     videoEntries: [],
     dracoLoader: null,
     mixers: [],
+    // Particle Systems: Array of update functions
+    particleSystems: [] as Array<(delta: number) => void>,
   });
 
   const requestRef = useRef<number>(0);
@@ -360,6 +363,8 @@ export function SceneViewer({ objects, mediaMeasurements, onMediaDimensionsChang
 
       // Update animations
       resourcesRef.current.mixers.forEach((mixer) => mixer.update(delta));
+      // Update particles
+      resourcesRef.current.particleSystems.forEach((update) => update(delta));
 
       controls.update();
 
@@ -451,7 +456,10 @@ export function SceneViewer({ objects, mediaMeasurements, onMediaDimensionsChang
     res.gltfContainers = [];
     res.infoBallRotators = [];
     res.videoEntries = [];
+    res.infoBallRotators = [];
+    res.videoEntries = [];
     res.mixers = [];
+    res.particleSystems = [];
     mediaMeshRegistryRef.current = {};
 
     // Clear group
@@ -711,7 +719,7 @@ export function SceneViewer({ objects, mediaMeasurements, onMediaDimensionsChang
       const lowestCenterY = -((config.floorCount - 1) * verticalSpacing) / 2;
 
       for (let layer = 0; layer < config.floorCount; layer += 1) {
-        const angleX = config.floorAngles[layer] ?? 0;
+        const angleX = -(config.floorAngles[layer] ?? 0);
         const layerCenterY = lowestCenterY + layer * verticalSpacing;
         const gapForLayer = config.faceGapList[layer] ?? config.faceGap;
         const circumference = (config.faceWidth + gapForLayer) * config.faceCount;
@@ -756,7 +764,163 @@ export function SceneViewer({ objects, mediaMeasurements, onMediaDimensionsChang
       }
     };
 
-    // Build Scene
+    const addParticleObject = (object: ArObject, objectKey: string | undefined) => {
+      const fields = (object.model?.fields ?? {}) as Record<string, unknown>;
+      const birthRate = toNumber(fields.particle_birth_rate, 500);
+      const birthRateVar = toNumber(fields.particle_birth_rate_variation, 50);
+      const lifeSpan = toNumber(fields.particle_life_span, 10);
+      const lifeSpanVar = toNumber(fields.particle_life_span_variation, 1);
+      const velocity = toNumber(fields.particle_velocity, 0.5);
+      const velocityVar = toNumber(fields.particle_velocity_variation, 0.1);
+
+      // Particle System Constants
+      const MAX_PARTICLES = 5000; // Reasonable cap
+
+      const geometry = new THREE.BufferGeometry();
+      const positions = new Float32Array(MAX_PARTICLES * 3);
+      const opacities = new Float32Array(MAX_PARTICLES); // For fade out/in
+      const sizes = new Float32Array(MAX_PARTICLES);
+
+      // We need to track particle state: position, lifetime, velocity (per particle if varied)
+      // For simplicity/performance, let's store state in a separate array
+      const particleState = new Float32Array(MAX_PARTICLES * 4); // [x, y, z, age]
+      const particleVelocities = new Float32Array(MAX_PARTICLES); // [speed]
+      const particleLifeSpans = new Float32Array(MAX_PARTICLES); // [maxAge] (in case of variation)
+      const particleActive = new Uint8Array(MAX_PARTICLES); // 0 or 1
+
+      geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+      geometry.setAttribute('opacity', new THREE.BufferAttribute(opacities, 1));
+
+      // Load texture
+      const assetUrl = getPrimaryAssetUrl(object);
+      let map: THREE.Texture | undefined;
+      if (assetUrl) {
+        map = textureLoader.load(assetUrl);
+        map.colorSpace = THREE.SRGBColorSpace;
+      }
+
+      const material = new THREE.PointsMaterial({
+        size: 0.5, // Base size
+        map: map,
+        transparent: true,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending, // Usually better for light particles
+        color: 0xffffff,
+      });
+      // Shader modification or custom shader might be needed for per-particle opacity if PointsMaterial doesn't support it well with attribute
+      // Standard PointsMaterial uses 'opacity' prop globally. To have per-particle opacity, we need a custom shader or modify the existing one.
+      // Or simply, we use `size` to scale to 0 to simulate disappearance if opacity is hard.
+      // Actually, let's use a simple trick: use `size` to shrink them out or implement a custom shader material for particles later.
+      // For MVP, handling opacity via custom shader is best but complex. 
+      // Let's use `size` scaling for "fade" effect or just hard reset.
+      // Or: Use built-in support? PointsMaterial doesn't support vertex opacity attribute out of box unless vertexColors is used, but that's color.
+      // Let's stick to standard PointsMaterial for now and assume global opacity OR 
+      // better: use `vertexColors: true` and manipulate the alpha in color attribute? 
+      // THREE.PointsMaterial uses `map` and vertex colors multiplied.
+      // Let's use `vertexColors: true` and set colors to (1,1,1, alpha) if possible? 
+      // No, THREE.js standard vertex colors are RGB.
+      // Okay, let's just make them pop in/out or move them far away when dead.
+
+      const points = new THREE.Points(geometry, material);
+
+      const wrapper = new THREE.Group();
+      wrapper.add(points);
+      group.add(wrapper);
+
+      const location = getSafeLocation(object);
+      const zoom = getSafeZoom(object);
+      applyTransform(wrapper, location, degToRad);
+      wrapper.scale.multiply(new THREE.Vector3(zoom.x, zoom.y, zoom.z));
+
+      // Compensate for scale in velocity (World Speed vs Local Speed)
+      // If wrapper is scaled x10, movement of 0.5 becomes 5.0 world units.
+      // We assume intended velocity is World Units.
+      // We use the Y scale as the primary scale factor for "descent" normalization.
+      const scaleFactor = Math.max(0.001, zoom.y);
+      const normalizedVelocity = velocity / scaleFactor;
+      const normalizedVelocityVar = velocityVar / scaleFactor;
+
+      // Calculate Local Gravity Vector (World Down transformed to Local)
+      const localGravity = new THREE.Vector3(0, -1, 0);
+      localGravity.applyQuaternion(wrapper.quaternion.clone().invert());
+      localGravity.normalize();
+
+      // State for spawning
+      let spawnAccumulator = 0;
+
+      // Update function
+      const update = (delta: number) => {
+        // 1. Spawning
+        // Calculate current birth rate with variation (could vary per frame or per second)
+        // Let's vary it slightly per frame or just keep it simple.
+        const currentBirthRate = birthRate + (Math.random() * 2 - 1) * birthRateVar;
+        const rate = Math.max(0, currentBirthRate);
+        const particlesToSpawn = rate * delta;
+
+        spawnAccumulator += particlesToSpawn;
+
+        let countToSpawn = Math.floor(spawnAccumulator);
+        if (countToSpawn > 0) {
+          spawnAccumulator -= countToSpawn;
+          // Find inactive slots
+          for (let i = 0; i < MAX_PARTICLES && countToSpawn > 0; i++) {
+            if (particleActive[i] === 0) {
+              particleActive[i] = 1;
+
+              // Reset position (relative to emitter/wrapper origin 0,0,0)
+              // Spread particles across the plane defined by zoom.
+              // For rotated plane (e.g. 90X), this covers X/Y local which maps to horizontal world plane.
+              particleState[i * 4 + 0] = Math.random() - 0.5; // x
+              particleState[i * 4 + 1] = Math.random() - 0.5; // y
+              particleState[i * 4 + 2] = 0; // z
+              particleState[i * 4 + 3] = 0; // age
+
+              // Velocity
+              const vel = normalizedVelocity + (Math.random() * 2 - 1) * normalizedVelocityVar;
+              particleVelocities[i] = vel;
+
+              // Life
+              const life = lifeSpan + (Math.random() * 2 - 1) * lifeSpanVar;
+              particleLifeSpans[i] = Math.max(0.1, life);
+
+              countToSpawn--;
+            }
+          }
+        }
+
+        let activeCount = 0;
+        const positionsAttr = points.geometry.attributes.position;
+        // 2. Update living particles
+        for (let i = 0; i < MAX_PARTICLES; i++) {
+          if (particleActive[i] === 1) {
+            // Update age
+            particleState[i * 4 + 3] += delta;
+
+            // Check death
+            if (particleState[i * 4 + 3] >= particleLifeSpans[i]) {
+              particleActive[i] = 0;
+              // Move out of view
+              positionsAttr.setXYZ(i, 0, -99999, 0);
+              continue;
+            }
+
+            // Update Position with World Down Gravity (Local Direction)
+            // We use localGravity (unit vector) * speed * delta
+            const maxStep = particleVelocities[i] * delta;
+            particleState[i * 4 + 0] += localGravity.x * maxStep;
+            particleState[i * 4 + 1] += localGravity.y * maxStep;
+            particleState[i * 4 + 2] += localGravity.z * maxStep;
+
+            positionsAttr.setXYZ(i, particleState[i * 4 + 0], particleState[i * 4 + 1], particleState[i * 4 + 2]);
+            activeCount++;
+          }
+        }
+
+        positionsAttr.needsUpdate = true;
+      };
+
+      res.particleSystems.push(update);
+    };
     objects.forEach((object, index) => {
       const objectKey = getSceneObjectKey(object, index);
       const measurement = objectKey ? mediaMeasurementsRef.current[objectKey] : undefined;
@@ -764,6 +928,11 @@ export function SceneViewer({ objects, mediaMeasurements, onMediaDimensionsChang
 
       if (object.model?.type === 13) {
         addInfoBallObject(object, objectKey);
+        return;
+      }
+
+      if (object.model?.type === 16) {
+        addParticleObject(object, objectKey);
         return;
       }
 
