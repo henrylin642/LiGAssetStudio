@@ -254,7 +254,7 @@ export default function GalleryPage() {
       
       for (let i = 0; i < count; i++) {
         // Step 1: Create AR Object in Scene
-        let arObjectId: string | null = null;
+        let createdObjectId: string | null = null;
         
         const uploadRes = await api("/scenes/upload-from-asset", {
           method: "POST",
@@ -266,16 +266,16 @@ export default function GalleryPage() {
              try {
                 const uploadData = await uploadRes.json();
                 const objectData = uploadData.result || uploadData;
-                if (objectData && typeof objectData.id === 'number') arObjectId = String(objectData.id);
-                else if (objectData && typeof objectData.id === 'string') arObjectId = objectData.id;
+                if (objectData && typeof objectData.id === 'number') createdObjectId = String(objectData.id);
+                else if (objectData && typeof objectData.id === 'string') createdObjectId = objectData.id;
              } catch (e) { /* ignore */ }
         }
 
         // If not found in response, fallback to fetching scene objects and picking latest
         // Retry logic to handle potential race condition where object creation is slow to appear in list
-        if (!arObjectId) {
+        if (!createdObjectId) {
              let retries = 3;
-             while (retries > 0 && !arObjectId) {
+             while (retries > 0 && !createdObjectId) {
                  try {
                      const objectsRes = await api(`/scenes/${sceneId}/objects`);
                      if (objectsRes.ok) {
@@ -289,8 +289,8 @@ export default function GalleryPage() {
                              
                              if (targetList.length > 0) {
                                  // Check if this object was created recently (optional heuristic, or just trust ID)
-                                 arObjectId = String(targetList[0].id);
-                                 console.log(`Fallback: Found latest object ID ${arObjectId} for scene ${sceneId}`);
+                                 createdObjectId = String(targetList[0].id);
+                                 console.log(`Fallback: Found latest object ID ${createdObjectId} for scene ${sceneId}`);
                              }
                          }
                      }
@@ -298,14 +298,14 @@ export default function GalleryPage() {
                      console.error("Failed to fetch scene objects for fallback ID resolution:", e);
                  }
                  
-                 if (!arObjectId) {
+                 if (!createdObjectId) {
                      retries--;
                      if (retries > 0) await new Promise(res => setTimeout(res, 500)); // Wait 500ms before retry
                  }
              }
         }
 
-        if (!arObjectId) {
+        if (!createdObjectId) {
              console.error("Could not determine AR Object ID after retries. Skipping update.");
              continue;
         }
@@ -313,7 +313,7 @@ export default function GalleryPage() {
         // Fetch the current object state to ensure we have a valid base for update
         let currentObject: any = null;
         try {
-            const getRes = await api(`/ar_objects/${arObjectId}`);
+            const getRes = await api(`/ar_objects/${createdObjectId}`);
             if (getRes.ok) {
                 const getData = await getRes.json();
                 currentObject = getData.result || getData; // handle potential wrapper
@@ -356,7 +356,7 @@ export default function GalleryPage() {
         }
 
         try {
-            const updateRes = await api(`/ar_objects/${arObjectId}`, {
+            const updateRes = await api(`/ar_objects/${createdObjectId}`, {
                 method: "POST",
                 body: JSON.stringify(updateBody)
             });
