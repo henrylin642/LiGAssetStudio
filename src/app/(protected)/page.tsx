@@ -332,18 +332,6 @@ export default function GalleryPage() {
              continue;
         }
 
-        // Fetch current object
-        let currentObject: any = null;
-        try {
-            const getRes = await api(`/ar_objects/${createdObjectId}`);
-            if (getRes.ok) {
-                const getData = await getRes.json();
-                currentObject = getData.result || getData;
-            }
-        } catch (e) {
-            console.error("Failed to fetch new AR Object:", e);
-        }
-
         if (isRandom) {
             // Calculate Random Position
             const x = (Math.random() - 0.5) * placementRange;
@@ -363,19 +351,11 @@ export default function GalleryPage() {
 
             addLog(`Updating location to: X=${x.toFixed(2)}, Y=${y}, Z=${z.toFixed(2)}`);
 
-            // Construct update body
-            let updateBody: any = {};
-            if (currentObject) {
-                 updateBody = { ...currentObject };
-                 updateBody.location = newLocation;
-            } else {
-                 updateBody = { location: newLocation };
-            }
-
+            // Use PATCH with minimal payload (only location) to avoid overwriting other fields or sending invalid data
             try {
                 const updateRes = await api(`/ar_objects/${createdObjectId}`, {
-                    method: "POST",
-                    body: JSON.stringify(updateBody)
+                    method: "PATCH",
+                    body: JSON.stringify({ location: newLocation })
                 });
                 if (!updateRes.ok) {
                      addLog(`❌ Update failed: ${await updateRes.text()}`);
@@ -391,21 +371,6 @@ export default function GalleryPage() {
       }
 
       // Don't close immediately if there are logs (let user read them)
-      // Or maybe clear after success? User asked to show logs.
-      // We will keep the sheet open or keep logs visible? 
-      // User request: "把你的操作log先顯示在Upload asset的視窗下"
-      // We will keep the upload asset state active? 
-      // To properly show logs, we shouldn't reset `uploadAsset` immediately if we want user to see.
-      // But usually user wants to close after done. 
-      // Let's add a "Close" button or keep it open. 
-      // For now, I'll NOT clear `uploadAsset` automatically if successfully finished, 
-      // OR I clear it but the Sheet closes?
-      // If I set `uploadAsset` to null, the sheet closes.
-      // So I should NOT set `uploadAsset` to null automatically if I want them to see logs.
-      // I will only clear fields like sceneId etc.
-      
-      // setUploadAsset(null); // Keep open to show logs
-      // setSceneId(undefined); // Keep scene selected for repeated usage? or reset?
       
       addLog(`✨ All operations completed.`);
 
