@@ -44,10 +44,39 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (status !== "loading") return;
+
+    const verifyToken = async (storedToken: string) => {
+      try {
+        const res = await fetch("/api/scenes?limit=1", {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${storedToken}`,
+          },
+        });
+
+        if (res.status === 401) {
+          console.warn("Stored token is invalid (401). Logging out.");
+          clearToken();
+          setStatus("unauthenticated");
+          return;
+        }
+
+        // Token seems valid (or at least not 401), proceed.
+        setToken(storedToken);
+      } catch (err) {
+        console.error("Token verification failed (network error). Keeping token.", err);
+        // If network error, we might still want to let them in and fail gracefully later?
+        // Or assume valid to allow offline usage? 
+        // Conservatively allow entry:
+        setToken(storedToken);
+      }
+    };
+
     const storedToken = getToken();
     if (storedToken) {
-      queueMicrotask(() => setToken(storedToken));
+      verifyToken(storedToken);
     } else {
+      // Small delay to prevent flash? optional.
       queueMicrotask(() => setStatus("unauthenticated"));
     }
   }, [setToken, status]);
