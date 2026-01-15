@@ -254,6 +254,8 @@ export default function GalleryPage() {
       
       for (let i = 0; i < count; i++) {
         // Step 1: Create AR Object in Scene
+        let arObjectId: string | null = null;
+        
         const uploadRes = await api("/scenes/upload-from-asset", {
           method: "POST",
           body: JSON.stringify({ assetId: uploadAsset.id, sceneId, name: sceneName }),
