@@ -271,13 +271,14 @@ export default function GalleryPage() {
         let arObjectId: string | null = null;
         try {
             const data = await uploadRes.json();
-            // Assuming the response contains the object with an 'id' field
-            // The user prompt mentioned "你能獲得AR Object的id"
-            // We need to support whatever the API returns. Common pattern is { id: ... } or just the object.
-            if (data && typeof data.id === 'number') {
-                arObjectId = String(data.id);
-            } else if (data && typeof data.id === 'string') {
-                arObjectId = data.id;
+            // The API route returns { result: { ...upstream_response } }
+            // construct the object based on what we find
+            const objectData = data.result || data;
+            
+            if (objectData && typeof objectData.id === 'number') {
+                arObjectId = String(objectData.id);
+            } else if (objectData && typeof objectData.id === 'string') {
+                arObjectId = objectData.id;
             }
         } catch (e) {
             console.error("Failed to parse response", e);
