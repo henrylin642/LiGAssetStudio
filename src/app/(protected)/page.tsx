@@ -53,6 +53,7 @@ export default function GalleryPage() {
   // Mass Upload States
   const [duplicateCount, setDuplicateCount] = useState(1);
   const [isRandomPlace, setIsRandomPlace] = useState(false);
+  const [customName, setCustomName] = useState("");
   const [lightTagHeight, setLightTagHeight] = useState(1.6);
   const [placementRange, setPlacementRange] = useState(20);
 
@@ -441,10 +442,19 @@ export default function GalleryPage() {
                     transparency: currentObject.transparency ?? 1.0,
                     events: stripNones(currentObject.events || [])
                  };
+
+                 // Handle Sequential Naming
+                 if (customName.trim()) {
+                     payload.name = `${customName.trim()} ${i + 1}`;
+                 }
+
                  // Add optional fields if present
                  ['id', 'name', 'configuration', 'light_id', 'ar_object_owner_id', 
                   'ar_object_owner_type', 'group', 'zone_id', 'scene_id', 'sub_events', 'is_child', 'actions']
                  .forEach(key => {
+                     // If we already set name above, don't overwrite it from currentObject
+                     if (key === 'name' && payload.name) return;
+
                      if (currentObject[key] !== undefined) {
                          // Note: We stripNones FIRST, then check if result is "empty"
                          const val = stripNones(currentObject[key], key);
@@ -455,8 +465,11 @@ export default function GalleryPage() {
                  });
             } else {
                  payload = { location: newLocation };
+                 if (customName.trim()) {
+                     payload.name = `${customName.trim()} ${i + 1}`;
+                 }
             }
-
+            
             addLog(`Payload: ${JSON.stringify(payload)}`);
 
             try {
@@ -482,9 +495,17 @@ export default function GalleryPage() {
         }
       }
 
-      // Don't close immediately if there are logs (let user read them)
+      setUploadAsset(null);
+    setSceneId(undefined);
+    setSceneName("");
+    // Reset to defaults
+    setDuplicateCount(1);
+    setIsRandomPlace(false);
+    setCustomName("");
+    
+    // Don't close immediately if there are logs (let user read them)
       
-      addLog(`✨ All operations completed.`);
+    addLog(`✨ All operations completed.`);
 
     } catch (e) {
       addLog(`❌ Critical Error: ${e}`);
