@@ -20,6 +20,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { formatBytes } from "@/lib/utils";
+import { PlacementPreview } from "@/components/placement-preview";
 
 async function readFileAsBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -51,11 +52,29 @@ export default function GalleryPage() {
   const [sceneName, setSceneName] = useState("");
   
   // Mass Upload States
+  // Mass Upload States
   const [duplicateCount, setDuplicateCount] = useState(1);
   const [isRandomPlace, setIsRandomPlace] = useState(false);
   const [customName, setCustomName] = useState("");
   const [lightTagHeight, setLightTagHeight] = useState(1.6);
   const [placementRange, setPlacementRange] = useState(20);
+
+  // Detailed Bounds State (Syncd with range initially)
+  const [bounds, setBounds] = useState({ minX: -10, maxX: 10, minZ: 0, maxZ: 20 });
+  
+  const handleRangeChange = (val: number) => {
+      setPlacementRange(val);
+      setBounds({
+          minX: -val / 2,
+          maxX: val / 2,
+          minZ: 0,
+          maxZ: val,
+      });
+  };
+
+  const handleBoundChange = (key: keyof typeof bounds, val: number) => {
+      setBounds(prev => ({ ...prev, [key]: val }));
+  };
 
   const [uploading, setUploading] = useState(false);
   const [assetUploadOpen, setAssetUploadOpen] = useState(false);
@@ -365,9 +384,10 @@ export default function GalleryPage() {
         }
 
         if (isRandom) {
-            const x = (Math.random() - 0.5) * placementRange;
+            // Calculate Random Position within bounds
+            const x = bounds.minX + Math.random() * (bounds.maxX - bounds.minX);
             const y = -lightTagHeight;
-            const z = Math.random() * placementRange;
+            const z = bounds.minZ + Math.random() * (bounds.maxZ - bounds.minZ);
             
             const rotateX = 0;
             const rotateZ = 0;
@@ -734,27 +754,101 @@ export default function GalleryPage() {
             </div>
 
             {isRandomPlace && (
-                <div className="grid grid-cols-2 gap-4 border p-2 rounded-md bg-slate-50">
-                    <div className="space-y-2">
-                        <Label htmlFor="lightTagHeight">LightTag Height (m)</Label>
-                        <Input
-                            id="lightTagHeight"
-                            type="number"
-                            step={0.1}
-                            value={lightTagHeight}
-                            onChange={(e) => setLightTagHeight(Number(e.target.value))}
-                        />
-                    </div>
-                    <div className="space-y-2">
-                         <Label htmlFor="placementRange">Placement Range (m)</Label>
-                        <Input
-                            id="placementRange"
-                            type="number"
-                            step={1}
-                            value={placementRange}
-                            onChange={(e) => setPlacementRange(Number(e.target.value))}
-                        />
-                    </div>
+                <div className="space-y-4 border p-2 rounded-md bg-slate-50">
+                     <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                            <Label htmlFor="lightTagHeight">LightTag Height (m)</Label>
+                            <Input
+                                id="lightTagHeight"
+                                type="number"
+                                step={0.1}
+                                value={lightTagHeight}
+                                onChange={(e) => setLightTagHeight(Number(e.target.value))}
+                            />
+                        </div>
+                        <div className="space-y-2">
+                             <Label htmlFor="placementRange">Default Range (m)</Label>
+                            <Input
+                                id="placementRange"
+                                type="number"
+                                step={1}
+                                value={placementRange}
+                                onChange={(e) => handleRangeChange(Number(e.target.value))}
+                            />
+                        </div>
+                     </div>
+                     
+                     <div className="space-y-2">
+                        <Label>Area Coordinates (Editable)</Label>
+                        <div className="grid grid-cols-2 gap-2 text-xs">
+                             <div className="space-y-1">
+                                <Label className="text-xs text-slate-500">Coord 1 (maxX, minZ)</Label>
+                                <div className="flex gap-1">
+                                    <Input 
+                                        type="number" value={bounds.maxX} 
+                                        onChange={(e) => handleBoundChange('maxX', Number(e.target.value))} 
+                                        className="h-8" title="X"
+                                    />
+                                    <Input 
+                                        type="number" value={bounds.minZ} 
+                                        onChange={(e) => handleBoundChange('minZ', Number(e.target.value))}
+                                        className="h-8" title="Z"
+                                    />
+                                </div>
+                             </div>
+                             <div className="space-y-1">
+                                <Label className="text-xs text-slate-500">Coord 2 (minX, minZ)</Label>
+                                <div className="flex gap-1">
+                                    <Input 
+                                        type="number" value={bounds.minX} 
+                                        onChange={(e) => handleBoundChange('minX', Number(e.target.value))}
+                                        className="h-8" title="X"
+                                    />
+                                    <Input 
+                                        type="number" value={bounds.minZ} 
+                                        onChange={(e) => handleBoundChange('minZ', Number(e.target.value))}
+                                        className="h-8" title="Z"
+                                    />
+                                </div>
+                             </div>
+                             <div className="space-y-1">
+                                <Label className="text-xs text-slate-500">Coord 3 (maxX, maxZ)</Label>
+                                <div className="flex gap-1">
+                                    <Input 
+                                        type="number" value={bounds.maxX} 
+                                        onChange={(e) => handleBoundChange('maxX', Number(e.target.value))}
+                                        className="h-8" title="X"
+                                    />
+                                    <Input 
+                                        type="number" value={bounds.maxZ} 
+                                        onChange={(e) => handleBoundChange('maxZ', Number(e.target.value))}
+                                        className="h-8" title="Z"
+                                    />
+                                </div>
+                             </div>
+                             <div className="space-y-1">
+                                <Label className="text-xs text-slate-500">Coord 4 (minX, maxZ)</Label>
+                                <div className="flex gap-1">
+                                    <Input 
+                                        type="number" value={bounds.minX} 
+                                        onChange={(e) => handleBoundChange('minX', Number(e.target.value))}
+                                        className="h-8" title="X"
+                                    />
+                                    <Input 
+                                        type="number" value={bounds.maxZ} 
+                                        onChange={(e) => handleBoundChange('maxZ', Number(e.target.value))}
+                                        className="h-8" title="Z"
+                                    />
+                                </div>
+                             </div>
+                        </div>
+                     </div>
+
+                     <div className="flex justify-center p-2 border rounded bg-white">
+                        <div className="w-full max-w-[200px]">
+                            <PlacementPreview {...bounds} />
+                        </div>
+                     </div>
                 </div>
             )}
 
