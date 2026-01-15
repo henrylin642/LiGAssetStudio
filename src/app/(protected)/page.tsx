@@ -381,28 +381,41 @@ export default function GalleryPage() {
 
             addLog(`Updating location to: X=${x.toFixed(2)}, Y=${y}, Z=${z.toFixed(2)}`);
 
-            // Helper to clean payload (remove nulls/undefined/empty objects mainly recursively if needed, 
-            // but for now simple null check matches Python's intent)
-            // Python's strip_nones recursive logic might be key if backend hates nulls.
-            
-            const stripNones = (value: any): any => {
-                if (value === null || value === undefined) return undefined;
-                if (Array.isArray(value)) {
-                    const cleaned = value.map(stripNones).filter(v => v !== undefined && v !== null);
-                    return cleaned.length > 0 ? cleaned : [];
+            // Helper to clean payload matching Python's logic exactly
+            const stripNones = (value: any, keyName?: string): any => {
+                const targetKeys = new Set(["start_frame", "end_frame", "fps"]);
+                
+                if (value === null || value === undefined) {
+                    // Python keeps nulls for target_keys
+                    if (keyName && targetKeys.has(keyName)) return null;
+                    return undefined;
                 }
+
+                if (Array.isArray(value)) {
+                    const cleaned = value.map(v => stripNones(v)).filter(v => v !== undefined);
+                    // Python returns the list even if empty here? 
+                    // "if cleaned_item is not None: cleaned_list.append" -> returns cleaned_list.
+                    // Yes, returns empty list if all None. 
+                    return cleaned;
+                }
+                
                 if (typeof value === 'object') {
                     const cleaned: any = {};
-                    let hasKeys = false;
                     for (const k in value) {
-                        const v = stripNones(value[k]);
-                        if (v !== undefined && v !== null) {
-                            cleaned[k] = v;
-                            hasKeys = true;
+                        const v = stripNones(value[k], k);
+                        // Python: if cleaned_val is not None or key in target_keys
+                        if (v !== undefined || targetKeys.has(k)) {
+                             // If v is undefined but k is in targetKeys, we want to set it to what?
+                             // If value[k] was null, stripNones returned null. So v is null.
+                             // If value[k] was whatever and became undefined? 
+                             // My logic above returns null for targetKeys if input is null.
+                             // So if v is null, it passes (v !== undefined).
+                             // If v is undefined (input was undefined/null and NOT targetKey), it fails.
+                             if (v !== undefined) {
+                                 cleaned[k] = v;
+                             }
                         }
                     }
-                    // For location/zoom/model, maybe we return empty object if all keys removed? 
-                    // But Python says "if cleaned_val is not None...". 
                     return cleaned; 
                 }
                 return value;
@@ -410,6 +423,16 @@ export default function GalleryPage() {
 
             // Construct payload strictly following the working Python example
             let payload: any = {};
+            
+            // Helper to check for "empty" values as Python does: (None, "", [], {})
+            const isEmpty = (val: any) => {
+                if (val === undefined || val === null) return true;
+                if (val === "") return true;
+                if (Array.isArray(val) && val.length === 0) return true;
+                if (typeof val === 'object' && Object.keys(val).length === 0) return true;
+                return false;
+            }
+
             if (currentObject) {
                  payload = {
                     location: newLocation, // Overwrite with our new location
@@ -422,15 +445,19 @@ export default function GalleryPage() {
                  ['id', 'name', 'configuration', 'light_id', 'ar_object_owner_id', 
                   'ar_object_owner_type', 'group', 'zone_id', 'scene_id', 'sub_events', 'is_child', 'actions']
                  .forEach(key => {
-                     if (currentObject[key] !== undefined && currentObject[key] !== null && currentObject[key] !== "") {
-                         const val = stripNones(currentObject[key]);
-                         if (val !== undefined && val !== null) payload[key] = val;
+                     if (currentObject[key] !== undefined) {
+                         // Note: We stripNones FIRST, then check if result is "empty"
+                         const val = stripNones(currentObject[key], key);
+                         if (!isEmpty(val)) {
+                             payload[key] = val;
+                         }
                      }
                  });
             } else {
-                 // Fallback if GET failed (unlikely but safe)
                  payload = { location: newLocation };
             }
+
+            addLog(`Payload: ${JSON.stringify(payload)}`);
 
             try {
                 const updateRes = await api(`/ar-objects/${createdObjectId}`, {
