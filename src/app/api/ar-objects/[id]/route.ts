@@ -52,11 +52,20 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
     token,
   );
 
-  const upstreamBody = await forwardJson(upstream);
+  // Custom handling to capture non-JSON errors
+  const contentType = upstream.headers.get("content-type") || "";
   if (!upstream.ok) {
-    return NextResponse.json(upstreamBody ?? { error: "Failed to update AR object" }, { status: upstream.status });
+      const text = await upstream.text();
+      console.error(`Upstream PATCH failed: ${upstream.status} ${text}`);
+      try {
+          const json = JSON.parse(text);
+          return NextResponse.json(json, { status: upstream.status });
+      } catch {
+          return NextResponse.json({ error: text || `Upstream Error ${upstream.status}` }, { status: upstream.status });
+      }
   }
 
+  const upstreamBody = await forwardJson(upstream);
   return NextResponse.json(upstreamBody ?? { ok: true }, { status: upstream.status });
 }
 
