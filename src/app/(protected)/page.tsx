@@ -259,33 +259,47 @@ export default function GalleryPage() {
           body: JSON.stringify({ assetId: uploadAsset.id, sceneId, name: sceneName }),
         });
 
-        if (!uploadRes.ok) {
-            console.error("Failed to upload asset to scene", await uploadRes.text());
-            continue; 
+        if (uploadRes.ok) {
+             // Try to get ID from response first (if they fix API later)
+             try {
+                const data = await uploadRes.json();
+                const objectData = data.result || data;
+                if (objectData && typeof objectData.id === 'number') arObjectId = String(objectData.id);
+                else if (objectData && typeof objectData.id === 'string') arObjectId = objectData.id;
+             } catch (e) { /* ignore */ }
         }
 
-        // If random placement is not enabled, we are done for this iteration
-        if (!isRandom) continue;
-
-        // Get the created AR Object ID
-        let arObjectId: string | null = null;
-        try {
-            const data = await uploadRes.json();
-            // The API route returns { result: { ...upstream_response } }
-            // construct the object based on what we find
-            const objectData = data.result || data;
-            
-            if (objectData && typeof objectData.id === 'number') {
-                arObjectId = String(objectData.id);
-            } else if (objectData && typeof objectData.id === 'string') {
-                arObjectId = objectData.id;
-            }
-        } catch (e) {
-            console.error("Failed to parse response", e);
+        // If not found in response, fallback to fetching scene objects and picking latest
+        if (!arObjectId) {
+             try {
+                 const objectsRes = await api(`/scenes/${sceneId}/objects`);
+                 if (objectsRes.ok) {
+                     const objects = (await objectsRes.json()) as ArObject[];
+                     if (Array.isArray(objects) && objects.length > 0) {
+                         // Filter by name if possible to be safer, though IDs should be increasing
+                         // Since we just created it, it should have the highest ID.
+                         // But to be extra safe, let's look for matching name too.
+                         const candidates = objects.filter(o => o.name === sceneName);
+                         // If we found candidates, sort by ID desc. If not, fallback to all objects sorted by ID desc.
+                         // (Maybe name was formatted by server? If so, fallback to all)
+                         const targetList = candidates.length > 0 ? candidates : objects;
+                         
+                         // Sort descending by ID
+                         targetList.sort((a, b) => b.id - a.id);
+                         
+                         if (targetList.length > 0) {
+                             arObjectId = String(targetList[0].id);
+                             console.log(`Fallback: Found latest object ID ${arObjectId} for scene ${sceneId}`);
+                         }
+                     }
+                 }
+             } catch (e) {
+                 console.error("Failed to fetch scene objects for fallback ID resolution:", e);
+             }
         }
 
         if (!arObjectId) {
-             console.error("Failed to extract AR Object ID from:", data);
+             console.error("Could not determine AR Object ID. Skipping update.");
              continue;
         }
 
@@ -323,18 +337,12 @@ export default function GalleryPage() {
         };
 
         // Construct update body. 
-        // If we fetched the object, use it as base. Otherwise, fall back to minimized payload.
-        // User example suggested sending 'model', 'events' etc. 
-        // We will send a merged object if possible, or just the location if that's all we have.
         let updateBody: any = {};
         
         if (currentObject) {
              updateBody = { ...currentObject };
              updateBody.location = newLocation;
-             // Ensure ID is not in body if API forbids it? Usually fine.
         } else {
-             // Fallback: send what user provided as example skeleton structure if needed, 
-             // or just location if API supports partial.
              updateBody = {
                 location: newLocation
              };
