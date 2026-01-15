@@ -262,44 +262,49 @@ export default function GalleryPage() {
         if (uploadRes.ok) {
              // Try to get ID from response first (if they fix API later)
              try {
-                const data = await uploadRes.json();
-                const objectData = data.result || data;
+                const uploadData = await uploadRes.json();
+                const objectData = uploadData.result || uploadData;
                 if (objectData && typeof objectData.id === 'number') arObjectId = String(objectData.id);
                 else if (objectData && typeof objectData.id === 'string') arObjectId = objectData.id;
              } catch (e) { /* ignore */ }
         }
 
         // If not found in response, fallback to fetching scene objects and picking latest
+        // Retry logic to handle potential race condition where object creation is slow to appear in list
         if (!arObjectId) {
-             try {
-                 const objectsRes = await api(`/scenes/${sceneId}/objects`);
-                 if (objectsRes.ok) {
-                     const objects = (await objectsRes.json()) as ArObject[];
-                     if (Array.isArray(objects) && objects.length > 0) {
-                         // Filter by name if possible to be safer, though IDs should be increasing
-                         // Since we just created it, it should have the highest ID.
-                         // But to be extra safe, let's look for matching name too.
-                         const candidates = objects.filter(o => o.name === sceneName);
-                         // If we found candidates, sort by ID desc. If not, fallback to all objects sorted by ID desc.
-                         // (Maybe name was formatted by server? If so, fallback to all)
-                         const targetList = candidates.length > 0 ? candidates : objects;
-                         
-                         // Sort descending by ID
-                         targetList.sort((a, b) => b.id - a.id);
-                         
-                         if (targetList.length > 0) {
-                             arObjectId = String(targetList[0].id);
-                             console.log(`Fallback: Found latest object ID ${arObjectId} for scene ${sceneId}`);
+             let retries = 3;
+             while (retries > 0 && !arObjectId) {
+                 try {
+                     const objectsRes = await api(`/scenes/${sceneId}/objects`);
+                     if (objectsRes.ok) {
+                         const objects = (await objectsRes.json()) as ArObject[];
+                         if (Array.isArray(objects) && objects.length > 0) {
+                             const candidates = objects.filter(o => o.name === sceneName);
+                             const targetList = candidates.length > 0 ? candidates : objects;
+                             
+                             // Sort descending by ID
+                             targetList.sort((a, b) => b.id - a.id);
+                             
+                             if (targetList.length > 0) {
+                                 // Check if this object was created recently (optional heuristic, or just trust ID)
+                                 arObjectId = String(targetList[0].id);
+                                 console.log(`Fallback: Found latest object ID ${arObjectId} for scene ${sceneId}`);
+                             }
                          }
                      }
+                 } catch (e) {
+                     console.error("Failed to fetch scene objects for fallback ID resolution:", e);
                  }
-             } catch (e) {
-                 console.error("Failed to fetch scene objects for fallback ID resolution:", e);
+                 
+                 if (!arObjectId) {
+                     retries--;
+                     if (retries > 0) await new Promise(res => setTimeout(res, 500)); // Wait 500ms before retry
+                 }
              }
         }
 
         if (!arObjectId) {
-             console.error("Could not determine AR Object ID. Skipping update.");
+             console.error("Could not determine AR Object ID after retries. Skipping update.");
              continue;
         }
 
