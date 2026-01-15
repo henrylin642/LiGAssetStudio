@@ -1,15 +1,29 @@
 
 import React, { useMemo } from "react";
 
-interface PlacementPreviewProps {
-  minX: number;
-  maxX: number;
-  minZ: number;
-  maxZ: number;
+interface Point {
+  x: number;
+  z: number;
 }
 
-export function PlacementPreview({ minX, maxX, minZ, maxZ }: PlacementPreviewProps) {
-  // Determine viewbox based on bounds, adding some padding
+interface PlacementPreviewProps {
+  points: Point[];
+}
+
+export function PlacementPreview({ points }: PlacementPreviewProps) {
+  // Determine viewbox based on points
+  const xs = points.map(p => p.x);
+  const zs = points.map(p => p.z);
+  
+  // Include origin in viewbox calculation
+  xs.push(0);
+  zs.push(0);
+
+  const minX = Math.min(...xs);
+  const maxX = Math.max(...xs);
+  const minZ = Math.min(...zs);
+  const maxZ = Math.max(...zs);
+
   const padding = 2;
   const viewMinX = Math.min(minX, -5) - padding;
   const viewMaxX = Math.max(maxX, 5) + padding;
@@ -53,19 +67,7 @@ export function PlacementPreview({ minX, maxX, minZ, maxZ }: PlacementPreviewPro
     return lines;
   }, [viewMinX, viewMaxX, viewMinZ, viewMaxZ]);
 
-  // Convert Z to SVG Y (SVG y increases downwards, but usually 3D Z increases "forward" or "backward")
-  // Let's assume standard top-down map: X is horizontal, Z is vertical (up/down).
-  // In screen coords, Y increases down.
-  // Commonly in 2D editors: +Z is up (screen -Y) or down (screen +Y).
-  // Let's align with typical chart: +Z is UP (so we invert Y in SVG or transform).
-  // Transformation: scale(1, -1) to flip Y axis. But text will flip too.
-  // Simpler: Map world Z to SVG Y manually.
-  // World (x, z) -> SVG (x, -z) (plus offset)
-  // Actually, standard math plot: +Y is Up.
-  // The user said "Coordinate 3 (10, 20)".
-  // If we assume (X, Z), usually Z is forward depth.
-  // I will draw it such that +X is Right, +Z is Up (Screen Top).
-  // So SVG Y = -Z.
+  const polygonPoints = points.map(p => `${p.x},${p.z}`).join(" ");
 
   return (
     <div className="w-full aspect-square bg-white rounded-md border overflow-hidden">
@@ -79,28 +81,25 @@ export function PlacementPreview({ minX, maxX, minZ, maxZ }: PlacementPreviewPro
           {gridLines}
 
           {/* Placement Area */}
-          <rect
-            x={minX}
-            y={minZ}
-            width={maxX - minX}
-            height={maxZ - minZ}
+          <polygon
+            points={polygonPoints}
             fill="rgba(59, 130, 246, 0.2)"
             stroke="#3b82f6"
             strokeWidth={0.2}
           />
 
           {/* Corner Points */}
-          <circle cx={maxX} cy={minZ} r={0.3} fill="#ef4444" />
-          <circle cx={minX} cy={minZ} r={0.3} fill="#ef4444" />
-          <circle cx={maxX} cy={maxZ} r={0.3} fill="#ef4444" />
-          <circle cx={minX} cy={maxZ} r={0.3} fill="#ef4444" />
+          {points.map((p, i) => (
+            <circle key={i} cx={p.x} cy={p.z} r={0.3} fill="#ef4444" />
+          ))}
 
-          {/* Corner Labels (Optional, might be cluttered) - Scale back Y for text */}
-          {/* We skip text inside SVG for now to avoid flipping issues, simpler to rely on external UI labels */}
+          {/* Origin Point (Black, Slightly Larger) */ }
+          <circle cx={0} cy={0} r={0.5} fill="#000000" />
+
         </g>
       </svg>
       <div className="text-center text-xs text-slate-400 mt-1">
-        Grid: 1m | Red: Corners | Blue: Area
+        Grid: 1m | Black: Origin (0,0)
       </div>
     </div>
   );

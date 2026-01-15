@@ -59,21 +59,32 @@ export default function GalleryPage() {
   const [lightTagHeight, setLightTagHeight] = useState(1.6);
   const [placementRange, setPlacementRange] = useState(20);
 
-  // Detailed Bounds State (Syncd with range initially)
-  const [bounds, setBounds] = useState({ minX: -10, maxX: 10, minZ: 0, maxZ: 20 });
+  // Free-form Corners State (Order: Front-Right, Back-Right, Back-Left, Front-Left)
+  const [corners, setCorners] = useState([
+    { x: 10, z: 0 },   // 0: Front-Right
+    { x: 10, z: 20 },  // 1: Back-Right
+    { x: -10, z: 20 }, // 2: Back-Left
+    { x: -10, z: 0 }   // 3: Front-Left
+  ]);
   
   const handleRangeChange = (val: number) => {
       setPlacementRange(val);
-      setBounds({
-          minX: -val / 2,
-          maxX: val / 2,
-          minZ: 0,
-          maxZ: val,
-      });
+      const half = val / 2;
+      // Reset to rectangular default based on range
+      setCorners([
+          { x: half, z: 0 },
+          { x: half, z: val },
+          { x: -half, z: val },
+          { x: -half, z: 0 }
+      ]);
   };
 
-  const handleBoundChange = (key: keyof typeof bounds, val: number) => {
-      setBounds(prev => ({ ...prev, [key]: val }));
+  const handleCornerChange = (index: number, axis: 'x' | 'z', val: number) => {
+      setCorners(prev => {
+          const next = [...prev];
+          next[index] = { ...next[index], [axis]: val };
+          return next;
+      });
   };
 
   const [uploading, setUploading] = useState(false);
@@ -384,10 +395,41 @@ export default function GalleryPage() {
         }
 
         if (isRandom) {
-            // Calculate Random Position within bounds
-            const x = bounds.minX + Math.random() * (bounds.maxX - bounds.minX);
+            // Random Point in Arbitrary Convex Quadrilateral (0-1-2-3)
+            // Triangulate: T1(0,1,2), T2(0,2,3)
+            const p0 = corners[0];
+            const p1 = corners[1];
+            const p2 = corners[2];
+            const p3 = corners[3];
+
+            // Helper for Triangle Area
+            const area = (a: typeof p0, b: typeof p0, c: typeof p0) => 
+                Math.abs((a.x * (b.z - c.z) + b.x * (c.z - a.z) + c.x * (a.z - b.z)) / 2);
+
+            // Helper for Random Point in Triangle
+            const randomInTriangle = (a: typeof p0, b: typeof p0, c: typeof p0) => {
+                const r1 = Math.random();
+                const r2 = Math.random();
+                const sqrtR1 = Math.sqrt(r1);
+                const x = (1 - sqrtR1) * a.x + (sqrtR1 * (1 - r2)) * b.x + (sqrtR1 * r2) * c.x;
+                const z = (1 - sqrtR1) * a.z + (sqrtR1 * (1 - r2)) * b.z + (sqrtR1 * r2) * c.z;
+                return { x, z };
+            };
+
+            const area1 = area(p0, p1, p2);
+            const area2 = area(p0, p2, p3);
+            const totalArea = area1 + area2;
+            
+            let point: { x: number; z: number };
+            if (Math.random() < (area1 / totalArea)) {
+                point = randomInTriangle(p0, p1, p2);
+            } else {
+                point = randomInTriangle(p0, p2, p3);
+            }
+
+            const x = point.x;
             const y = -lightTagHeight;
-            const z = bounds.minZ + Math.random() * (bounds.maxZ - bounds.minZ);
+            const z = point.z;
             
             const rotateX = 0;
             const rotateZ = 0;
@@ -779,74 +821,36 @@ export default function GalleryPage() {
                      </div>
                      
                      <div className="space-y-2">
-                        <Label>Area Coordinates (Editable)</Label>
+                        <Label>Area Corners (Editable)</Label>
+                        <p className="text-[10px] text-slate-500">Order: Front-Right {`->`} Back-Right {`->`} Back-Left {`->`} Front-Left (Loop)</p>
                         <div className="grid grid-cols-2 gap-2 text-xs">
-                             <div className="space-y-1">
-                                <Label className="text-xs text-slate-500">Coord 1 (maxX, minZ)</Label>
-                                <div className="flex gap-1">
-                                    <Input 
-                                        type="number" value={bounds.maxX} 
-                                        onChange={(e) => handleBoundChange('maxX', Number(e.target.value))} 
-                                        className="h-8" title="X"
-                                    />
-                                    <Input 
-                                        type="number" value={bounds.minZ} 
-                                        onChange={(e) => handleBoundChange('minZ', Number(e.target.value))}
-                                        className="h-8" title="Z"
-                                    />
+                             {[0, 1, 2, 3].map((i) => (
+                                <div key={i} className="space-y-1">
+                                    <Label className="text-xs text-slate-500">
+                                        {i === 0 ? "Coord 1 (Front-R)" : 
+                                         i === 1 ? "Coord 2 (Back-R)" :
+                                         i === 2 ? "Coord 3 (Back-L)" : "Coord 4 (Front-L)"}
+                                    </Label>
+                                    <div className="flex gap-1">
+                                        <Input 
+                                            type="number" value={corners[i].x} 
+                                            onChange={(e) => handleCornerChange(i, 'x', Number(e.target.value))} 
+                                            className="h-8" title="X"
+                                        />
+                                        <Input 
+                                            type="number" value={corners[i].z} 
+                                            onChange={(e) => handleCornerChange(i, 'z', Number(e.target.value))}
+                                            className="h-8" title="Z"
+                                        />
+                                    </div>
                                 </div>
-                             </div>
-                             <div className="space-y-1">
-                                <Label className="text-xs text-slate-500">Coord 2 (minX, minZ)</Label>
-                                <div className="flex gap-1">
-                                    <Input 
-                                        type="number" value={bounds.minX} 
-                                        onChange={(e) => handleBoundChange('minX', Number(e.target.value))}
-                                        className="h-8" title="X"
-                                    />
-                                    <Input 
-                                        type="number" value={bounds.minZ} 
-                                        onChange={(e) => handleBoundChange('minZ', Number(e.target.value))}
-                                        className="h-8" title="Z"
-                                    />
-                                </div>
-                             </div>
-                             <div className="space-y-1">
-                                <Label className="text-xs text-slate-500">Coord 3 (maxX, maxZ)</Label>
-                                <div className="flex gap-1">
-                                    <Input 
-                                        type="number" value={bounds.maxX} 
-                                        onChange={(e) => handleBoundChange('maxX', Number(e.target.value))}
-                                        className="h-8" title="X"
-                                    />
-                                    <Input 
-                                        type="number" value={bounds.maxZ} 
-                                        onChange={(e) => handleBoundChange('maxZ', Number(e.target.value))}
-                                        className="h-8" title="Z"
-                                    />
-                                </div>
-                             </div>
-                             <div className="space-y-1">
-                                <Label className="text-xs text-slate-500">Coord 4 (minX, maxZ)</Label>
-                                <div className="flex gap-1">
-                                    <Input 
-                                        type="number" value={bounds.minX} 
-                                        onChange={(e) => handleBoundChange('minX', Number(e.target.value))}
-                                        className="h-8" title="X"
-                                    />
-                                    <Input 
-                                        type="number" value={bounds.maxZ} 
-                                        onChange={(e) => handleBoundChange('maxZ', Number(e.target.value))}
-                                        className="h-8" title="Z"
-                                    />
-                                </div>
-                             </div>
+                             ))}
                         </div>
                      </div>
 
                      <div className="flex justify-center p-2 border rounded bg-white">
                         <div className="w-full max-w-[200px]">
-                            <PlacementPreview {...bounds} />
+                            <PlacementPreview points={corners} />
                         </div>
                      </div>
                 </div>
