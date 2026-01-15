@@ -56,6 +56,195 @@ export default function GalleryPage() {
   const [lightTagHeight, setLightTagHeight] = useState(1.6);
   const [placementRange, setPlacementRange] = useState(20);
 
+  const [uploading, setUploading] = useState(false);
+  const [assetUploadOpen, setAssetUploadOpen] = useState(false);
+  const [assetUploadFiles, setAssetUploadFiles] = useState<File[]>([]);
+  const [assetUploadTags, setAssetUploadTags] = useState("");
+  const [assetUploadError, setAssetUploadError] = useState<string | null>(null);
+  const api = useApi();
+  const assetUploadTotalSize = useMemo(
+    () => assetUploadFiles.reduce((total, file) => total + file.size, 0),
+    [assetUploadFiles]
+  );
+
+  const assetsQuery = useAssetsQuery({ search, page, perPage, type });
+  const scenesQuery = useScenesQuery();
+  const createJob = useCreateJobMutation();
+  const queryClient = useQueryClient();
+
+  // Restore Asset Upload Mutation and handlers (also deleted!)
+  const assetUploadMutation = useMutation<
+    unknown,
+    Error,
+    {
+      files: File[];
+      tags: string;
+    }
+  >({
+    mutationFn: async ({ files, tags }) => {
+      if (files.length === 0) {
+        throw new Error("請先選擇檔案");
+      }
+      const tagList = tags
+        .split(",")
+        .map((tag) => tag.trim())
+        .filter((tag) => tag.length > 0);
+      const assetsPayload = await Promise.all(
+        files.map(async (file) => {
+          const base64 = await readFileAsBase64(file);
+          const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
+          return {
+            data: base64,
+            ext,
+            filename: file.name,
+            tags: tagList,
+          };
+        })
+      );
+
+      const payload = {
+        assets: assetsPayload,
+      };
+
+      const response = await api("/assets", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        let message = "Failed to upload asset";
+        try {
+          const body = await response.json();
+          if (body?.error && typeof body.error === "string") {
+            message = body.error;
+          }
+        } catch {
+          // ignore parse errors
+        }
+        throw new Error(message);
+      }
+
+      try {
+        return await response.json();
+      } catch {
+        return null;
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["assets"] });
+    },
+  });
+
+  function resetAssetUploadState() {
+    setAssetUploadFiles([]);
+    setAssetUploadTags("");
+    setAssetUploadError(null);
+  }
+
+  function handleAssetUploadOpenChange(open: boolean) {
+    setAssetUploadOpen(open);
+    if (!open) {
+      resetAssetUploadState();
+      assetUploadMutation.reset();
+    }
+  }
+
+  function handleAssetFileChange(event: React.ChangeEvent<HTMLInputElement>) {
+    const files = event.target.files ? Array.from(event.target.files) : [];
+    setAssetUploadFiles(files);
+    setAssetUploadError(null);
+    assetUploadMutation.reset();
+    event.target.value = "";
+  }
+
+  async function handleAssetUploadSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (assetUploadFiles.length === 0) {
+      setAssetUploadError("請先選擇檔案");
+      return;
+    }
+    setAssetUploadError(null);
+    assetUploadMutation.reset();
+    try {
+      await assetUploadMutation.mutateAsync({ files: assetUploadFiles, tags: assetUploadTags });
+      resetAssetUploadState();
+      setAssetUploadOpen(false);
+    } catch (error) {
+      if (error instanceof Error) {
+        setAssetUploadError(error.message);
+      } else {
+        setAssetUploadError("上傳失敗，請稍後再試。");
+      }
+    }
+  }
+
+  const { data, isLoading, error } = assetsQuery;
+  const assetPage = data as AssetPage | undefined;
+
+  const assets = assetPage?.items ?? [];
+  const totalPages = useMemo(() => {
+    if (!assetPage) return 1;
+    return Math.max(1, Math.ceil(assetPage.total / assetPage.pageSize));
+  }, [assetPage]);
+
+  function toggleAsset(asset: Asset, shouldSelect: boolean) {
+    setSelected((previous) => {
+      const set = new Set(previous);
+      if (shouldSelect) {
+        set.add(asset.id);
+      } else {
+        set.delete(asset.id);
+      }
+      return Array.from(set);
+    });
+    setSelectedAssets((previous) => {
+      const next = { ...previous };
+      if (shouldSelect) {
+        next[asset.id] = asset;
+      } else {
+        delete next[asset.id];
+      }
+      return next;
+    });
+  }
+
+  function resetSelection() {
+    setSelected([]);
+    setSelectedAssets({});
+  }
+
+  async function handleCreateJob(payload: Parameters<typeof createJob.mutateAsync>[0]) {
+    await createJob.mutateAsync(payload);
+    resetSelection();
+  }
+
+  function formatSceneName(template: string, assetName: string, index: number) {
+    const safeTemplate = template.trim().length > 0 ? template : "{{assetName}}";
+    return safeTemplate.replaceAll("{{assetName}}", assetName).replaceAll("{{index}}", String(index));
+  }
+
+  async function handleBatchUploadToScene(input: BatchSceneUploadInput) {
+    if (!input.sceneId) return;
+    const startIndex = Number.isFinite(input.startIndex) ? input.startIndex : 1;
+    const uploads = input.assetIds
+      .map((assetId, offset) => {
+        const asset = selectedAssets[assetId];
+        if (!asset) return null;
+        const name = formatSceneName(input.nameTemplate, asset.name, startIndex + offset);
+        return { assetId: asset.id, name };
+      })
+      .filter(Boolean) as { assetId: string; name: string }[];
+
+    for (const upload of uploads) {
+      await api("/scenes/upload-from-asset", {
+        method: "POST",
+        body: JSON.stringify({ assetId: upload.assetId, sceneId: input.sceneId, name: upload.name }),
+      });
+    }
+
+    resetSelection();
+  }
+
   const [logs, setLogs] = useState<string[]>([]);
 
   function addLog(message: string) {
