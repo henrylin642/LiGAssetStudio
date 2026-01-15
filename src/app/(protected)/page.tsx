@@ -368,9 +368,9 @@ export default function GalleryPage() {
             const y = -lightTagHeight;
             const z = Math.random() * placementRange;
             
-            const rotateX = Math.random() * 360;
-            const rotateZ = Math.random() * 360;
-            const rotateY = 0;
+            const rotateX = 0;
+            const rotateZ = 0;
+            const rotateY = Math.random() * 360;
 
             const newLocation = {
                 x, y, z,
