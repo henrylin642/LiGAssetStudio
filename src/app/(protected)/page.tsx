@@ -349,23 +349,99 @@ export default function GalleryPage() {
                 rotate_z: rotateZ,
             };
 
+        // Fetch the current object state to ensure we have a valid base for update
+        let currentObject: any = null;
+        try {
+            const getRes = await api(`/ar-objects/${createdObjectId}`);
+            if (getRes.ok) {
+                const getData = await getRes.json();
+                currentObject = getData.result || getData;
+            } else {
+                 addLog(`⚠️ Warning: Failed to fetch object for update base. Status: ${getRes.status}`);
+            }
+        } catch (e) {
+            addLog(`⚠️ Warning: Exception fetching object: ${e}`);
+        }
+
+        if (isRandom) {
+            const x = (Math.random() - 0.5) * placementRange;
+            const y = -lightTagHeight;
+            const z = Math.random() * placementRange;
+            
+            const rotateX = Math.random() * 360;
+            const rotateZ = Math.random() * 360;
+            const rotateY = 0;
+
+            const newLocation = {
+                x, y, z,
+                rotate_x: rotateX,
+                rotate_y: rotateY,
+                rotate_z: rotateZ,
+            };
+
             addLog(`Updating location to: X=${x.toFixed(2)}, Y=${y}, Z=${z.toFixed(2)}`);
 
-            // Use PATCH with minimal payload (only location) to avoid overwriting other fields or sending invalid data
+            // Helper to clean payload (remove nulls/undefined/empty objects mainly recursively if needed, 
+            // but for now simple null check matches Python's intent)
+            // Python's strip_nones recursive logic might be key if backend hates nulls.
+            
+            const stripNones = (value: any): any => {
+                if (value === null || value === undefined) return undefined;
+                if (Array.isArray(value)) {
+                    const cleaned = value.map(stripNones).filter(v => v !== undefined && v !== null);
+                    return cleaned.length > 0 ? cleaned : [];
+                }
+                if (typeof value === 'object') {
+                    const cleaned: any = {};
+                    let hasKeys = false;
+                    for (const k in value) {
+                        const v = stripNones(value[k]);
+                        if (v !== undefined && v !== null) {
+                            cleaned[k] = v;
+                            hasKeys = true;
+                        }
+                    }
+                    // For location/zoom/model, maybe we return empty object if all keys removed? 
+                    // But Python says "if cleaned_val is not None...". 
+                    return cleaned; 
+                }
+                return value;
+            };
+
+            // Construct payload strictly following the working Python example
+            let payload: any = {};
+            if (currentObject) {
+                 payload = {
+                    location: newLocation, // Overwrite with our new location
+                    zoom: stripNones(currentObject.zoom || {}),
+                    model: stripNones(currentObject.model || {}),
+                    transparency: currentObject.transparency ?? 1.0,
+                    events: stripNones(currentObject.events || [])
+                 };
+                 // Add optional fields if present
+                 ['id', 'name', 'configuration', 'light_id', 'ar_object_owner_id', 
+                  'ar_object_owner_type', 'group', 'zone_id', 'scene_id', 'sub_events', 'is_child', 'actions']
+                 .forEach(key => {
+                     if (currentObject[key] !== undefined && currentObject[key] !== null && currentObject[key] !== "") {
+                         const val = stripNones(currentObject[key]);
+                         if (val !== undefined && val !== null) payload[key] = val;
+                     }
+                 });
+            } else {
+                 // Fallback if GET failed (unlikely but safe)
+                 payload = { location: newLocation };
+            }
+
             try {
                 const updateRes = await api(`/ar-objects/${createdObjectId}`, {
                     method: "PATCH",
-                    body: JSON.stringify({ location: newLocation })
+                    body: JSON.stringify(payload)
                 });
 
                 if (!updateRes.ok) {
                      let errorText = "";
-                     try {
-                        errorText = await updateRes.text();
-                     } catch (readErr) {
-                        errorText = `<Failed to read response body: ${readErr}>`;
-                     }
-                     addLog(`❌ Update failed: [${updateRes.status} ${updateRes.statusText}] ${errorText}`);
+                     try { errorText = await updateRes.text(); } catch (readErr) { errorText = String(readErr); }
+                     addLog(`❌ Update failed: [${updateRes.status} ${updateRes.statusText}] ${errorText.slice(0, 200)}...`);
                 } else {
                      addLog(`✅ Location updated successfully.`);
                 }
@@ -373,6 +449,8 @@ export default function GalleryPage() {
                 addLog(`❌ Exception during update: ${e}`);
             }
         } else {
+            addLog(`Random placement disabled. Skipping update.`);
+        }
             addLog(`Random placement disabled. Skipping update.`);
         }
       }
