@@ -284,9 +284,24 @@ export default function GalleryPage() {
             console.error("Failed to parse response", e);
         }
 
-        if (!arObjectId) continue;
+        if (!arObjectId) {
+             console.error("Failed to extract AR Object ID from:", data);
+             continue;
+        }
 
-        // Step 2: Calculate Random Position
+        // Fetch the current object state to ensure we have a valid base for update
+        let currentObject: any = null;
+        try {
+            const getRes = await api(`/ar_objects/${arObjectId}`);
+            if (getRes.ok) {
+                const getData = await getRes.json();
+                currentObject = getData.result || getData; // handle potential wrapper
+            }
+        } catch (e) {
+            console.error("Failed to fetch new AR Object:", e);
+        }
+
+        // Calculate Random Position
         // x: -range/2 to range/2
         // y: -lightTagHeight
         // z: 0 to range
@@ -298,49 +313,44 @@ export default function GalleryPage() {
         const rotateZ = Math.random() * 360;
         const rotateY = 0; // Fixed as per requirements
 
-        // Step 3: Update AR Object Location
-        // PATCH or UPDATE or POST as per user instructions: "post /api/v1/ar_objects/{AR Object id}"
-        // The user said "post /api/v1/ar_objects/{AR Object id}" to modify location.
-        // Usually updates are PUT or PATCH, but I will follow "POST" if strictly requested, 
-        // OR the existing `useApi` handles the base path. 
-        // Typically REST is PUT/PATCH. The user prompt explicitly said:
-        // "物件的屬性用這個api post /api/v1/ar_objects/{AR Object id}"
-        // "Body: ... location: ... "
-        
-        // Construct the body structure as defined by user
-        const updateBody = {
-            location: {
-                x,
-                y,
-                z,
-                rotate_x: rotateX,
-                rotate_y: rotateY,
-                rotate_z: rotateZ,
-            },
-            // We only need to update location, but the user showed a full body example.
-            // Often APIs support partial updates (PATCH). 
-            // If the API requires full body, we might need to fetch it first?
-            // "Body調整其中的location... Body: { name, transparency, location... }"
-            // If it's a POST update, it might accept partial given the context "調整其中的location".
-            // Let's try sending just what we want to change or a merged object if possible?
-            // To be safe and minimal: send just what user specified as "adjustment". 
-            // However, the JSON shows full structure.
-            // Since I cannot fetch the current state easily without another call, 
-            // I will assume the backend handles partial updates or I send the relevant fields.
-            // The safest bet for "adjustment" if it's not a PATCH is that we might need to be careful.
-            // BUT, usually "POST to update" implies a specific action or a robust handler.
-            // I'll send the location structure.
+        const newLocation = {
+            x,
+            y,
+            z,
+            rotate_x: rotateX,
+            rotate_y: rotateY,
+            rotate_z: rotateZ,
         };
 
-        // Note: The user said "model", "events" etc in body. 
-        // If I need to send everything, I'm in trouble without reading it first.
-        // But usually for these scripts, sending the partial update is the goal.
-        // Let's assume the server handles partials or we just send this.
+        // Construct update body. 
+        // If we fetched the object, use it as base. Otherwise, fall back to minimized payload.
+        // User example suggested sending 'model', 'events' etc. 
+        // We will send a merged object if possible, or just the location if that's all we have.
+        let updateBody: any = {};
         
-        await api(`/ar_objects/${arObjectId}`, {
-            method: "POST",
-            body: JSON.stringify(updateBody)
-        });
+        if (currentObject) {
+             updateBody = { ...currentObject };
+             updateBody.location = newLocation;
+             // Ensure ID is not in body if API forbids it? Usually fine.
+        } else {
+             // Fallback: send what user provided as example skeleton structure if needed, 
+             // or just location if API supports partial.
+             updateBody = {
+                location: newLocation
+             };
+        }
+
+        try {
+            const updateRes = await api(`/ar_objects/${arObjectId}`, {
+                method: "POST",
+                body: JSON.stringify(updateBody)
+            });
+            if (!updateRes.ok) {
+                 console.error("Failed to update location:", await updateRes.text());
+            }
+        } catch (e) {
+            console.error("Exception during location update:", e);
+        }
       }
 
       setUploadAsset(null);
