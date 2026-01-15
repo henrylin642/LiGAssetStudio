@@ -357,8 +357,15 @@ export default function GalleryPage() {
                     method: "PATCH",
                     body: JSON.stringify({ location: newLocation })
                 });
+
                 if (!updateRes.ok) {
-                     addLog(`❌ Update failed: ${await updateRes.text()}`);
+                     let errorText = "";
+                     try {
+                        errorText = await updateRes.text();
+                     } catch (readErr) {
+                        errorText = `<Failed to read response body: ${readErr}>`;
+                     }
+                     addLog(`❌ Update failed: [${updateRes.status} ${updateRes.statusText}] ${errorText}`);
                 } else {
                      addLog(`✅ Location updated successfully.`);
                 }
