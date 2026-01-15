@@ -11,9 +11,14 @@ interface PlacementPreviewProps {
 }
 
 export function PlacementPreview({ points }: PlacementPreviewProps) {
-  // Determine viewbox based on points
-  const xs = points.map(p => p.x);
-  const zs = points.map(p => p.z);
+  // Invert X for rendering to match user expectation (Right = -X, Left = +X)
+  // Input points are World Coords.
+  // Visual X = -World X.
+  const visualPoints = useMemo(() => points.map(p => ({ x: -p.x, z: p.z })), [points]);
+
+  // Determine viewbox based on visual points
+  const xs = visualPoints.map(p => p.x);
+  const zs = visualPoints.map(p => p.z);
   
   // Include origin in viewbox calculation
   xs.push(0);
@@ -67,7 +72,7 @@ export function PlacementPreview({ points }: PlacementPreviewProps) {
     return lines;
   }, [viewMinX, viewMaxX, viewMinZ, viewMaxZ]);
 
-  const polygonPoints = points.map(p => `${p.x},${p.z}`).join(" ");
+  const polygonPoints = visualPoints.map(p => `${p.x},${p.z}`).join(" ");
 
   return (
     <div className="w-full aspect-square bg-white rounded-md border overflow-hidden">
@@ -89,7 +94,7 @@ export function PlacementPreview({ points }: PlacementPreviewProps) {
           />
 
           {/* Corner Points */}
-          {points.map((p, i) => (
+          {visualPoints.map((p, i) => (
             <circle key={i} cx={p.x} cy={p.z} r={0.3} fill="#ef4444" />
           ))}
 
@@ -99,7 +104,7 @@ export function PlacementPreview({ points }: PlacementPreviewProps) {
         </g>
       </svg>
       <div className="text-center text-xs text-slate-400 mt-1">
-        Grid: 1m | Black: Origin (0,0)
+        Grid: 1m | Black: Origin (0,0) | Right is -X
       </div>
     </div>
   );
