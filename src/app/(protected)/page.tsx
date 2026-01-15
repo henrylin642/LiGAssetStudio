@@ -14,7 +14,7 @@ import { useAssetsQuery } from "@/hooks/use-assets";
 import { useScenesQuery } from "@/hooks/use-scenes";
 import { useCreateJobMutation } from "@/hooks/use-jobs";
 import { useApi } from "@/hooks/use-api";
-import type { Asset, AssetPage, AssetType } from "@/types/dto";
+import type { Asset, AssetPage, AssetType, ArObject } from "@/types/dto";
 import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
