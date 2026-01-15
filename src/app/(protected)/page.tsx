@@ -701,6 +701,16 @@ export default function GalleryPage() {
               />
             </div>
 
+            <div className="space-y-2">
+              <Label htmlFor="custom-name">Custom Name Prefix (Optional)</Label>
+              <Input
+                id="custom-name"
+                placeholder="e.g. MyObject (will become MyObject 1, MyObject 2...)"
+                value={customName}
+                onChange={(e) => setCustomName(e.target.value)}
+              />
+            </div>
+
             <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                     <Label htmlFor="duplicateCount">Duplicate Number</Label>
