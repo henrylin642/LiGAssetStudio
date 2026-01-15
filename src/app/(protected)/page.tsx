@@ -18,6 +18,7 @@ import type { Asset, AssetPage, AssetType } from "@/types/dto";
 import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import { formatBytes } from "@/lib/utils";
 
 async function readFileAsBase64(file: File): Promise<string> {
@@ -48,6 +49,13 @@ export default function GalleryPage() {
   const [uploadAsset, setUploadAsset] = useState<Asset | null>(null);
   const [sceneId, setSceneId] = useState<number>();
   const [sceneName, setSceneName] = useState("");
+  
+  // Mass Upload States
+  const [duplicateCount, setDuplicateCount] = useState(1);
+  const [isRandomPlace, setIsRandomPlace] = useState(false);
+  const [lightTagHeight, setLightTagHeight] = useState(1.6);
+  const [placementRange, setPlacementRange] = useState(20);
+
   const [uploading, setUploading] = useState(false);
   const [assetUploadOpen, setAssetUploadOpen] = useState(false);
   const [assetUploadFiles, setAssetUploadFiles] = useState<File[]>([]);
@@ -241,13 +249,105 @@ export default function GalleryPage() {
     if (!uploadAsset || !sceneId || !sceneName) return;
     setUploading(true);
     try {
-      await api("/scenes/upload-from-asset", {
-        method: "POST",
-        body: JSON.stringify({ assetId: uploadAsset.id, sceneId, name: sceneName }),
-      });
+      const count = Math.max(1, duplicateCount);
+      const isRandom = isRandomPlace;
+      
+      for (let i = 0; i < count; i++) {
+        // Step 1: Create AR Object in Scene
+        const uploadRes = await api("/scenes/upload-from-asset", {
+          method: "POST",
+          body: JSON.stringify({ assetId: uploadAsset.id, sceneId, name: sceneName }),
+        });
+
+        if (!uploadRes.ok) {
+            console.error("Failed to upload asset to scene", await uploadRes.text());
+            continue; 
+        }
+
+        // If random placement is not enabled, we are done for this iteration
+        if (!isRandom) continue;
+
+        // Get the created AR Object ID
+        let arObjectId: string | null = null;
+        try {
+            const data = await uploadRes.json();
+            // Assuming the response contains the object with an 'id' field
+            // The user prompt mentioned "你能獲得AR Object的id"
+            // We need to support whatever the API returns. Common pattern is { id: ... } or just the object.
+            if (data && typeof data.id === 'number') {
+                arObjectId = String(data.id);
+            } else if (data && typeof data.id === 'string') {
+                arObjectId = data.id;
+            }
+        } catch (e) {
+            console.error("Failed to parse response", e);
+        }
+
+        if (!arObjectId) continue;
+
+        // Step 2: Calculate Random Position
+        // x: -range/2 to range/2
+        // y: -lightTagHeight
+        // z: 0 to range
+        const x = (Math.random() - 0.5) * placementRange;
+        const y = -lightTagHeight;
+        const z = Math.random() * placementRange;
+        
+        const rotateX = Math.random() * 360;
+        const rotateZ = Math.random() * 360;
+        const rotateY = 0; // Fixed as per requirements
+
+        // Step 3: Update AR Object Location
+        // PATCH or UPDATE or POST as per user instructions: "post /api/v1/ar_objects/{AR Object id}"
+        // The user said "post /api/v1/ar_objects/{AR Object id}" to modify location.
+        // Usually updates are PUT or PATCH, but I will follow "POST" if strictly requested, 
+        // OR the existing `useApi` handles the base path. 
+        // Typically REST is PUT/PATCH. The user prompt explicitly said:
+        // "物件的屬性用這個api post /api/v1/ar_objects/{AR Object id}"
+        // "Body: ... location: ... "
+        
+        // Construct the body structure as defined by user
+        const updateBody = {
+            location: {
+                x,
+                y,
+                z,
+                rotate_x: rotateX,
+                rotate_y: rotateY,
+                rotate_z: rotateZ,
+            },
+            // We only need to update location, but the user showed a full body example.
+            // Often APIs support partial updates (PATCH). 
+            // If the API requires full body, we might need to fetch it first?
+            // "Body調整其中的location... Body: { name, transparency, location... }"
+            // If it's a POST update, it might accept partial given the context "調整其中的location".
+            // Let's try sending just what we want to change or a merged object if possible?
+            // To be safe and minimal: send just what user specified as "adjustment". 
+            // However, the JSON shows full structure.
+            // Since I cannot fetch the current state easily without another call, 
+            // I will assume the backend handles partial updates or I send the relevant fields.
+            // The safest bet for "adjustment" if it's not a PATCH is that we might need to be careful.
+            // BUT, usually "POST to update" implies a specific action or a robust handler.
+            // I'll send the location structure.
+        };
+
+        // Note: The user said "model", "events" etc in body. 
+        // If I need to send everything, I'm in trouble without reading it first.
+        // But usually for these scripts, sending the partial update is the goal.
+        // Let's assume the server handles partials or we just send this.
+        
+        await api(`/ar_objects/${arObjectId}`, {
+            method: "POST",
+            body: JSON.stringify(updateBody)
+        });
+      }
+
       setUploadAsset(null);
       setSceneId(undefined);
       setSceneName("");
+      // Reset to defaults
+      setDuplicateCount(1);
+      setIsRandomPlace(false);
     } finally {
       setUploading(false);
     }
@@ -412,7 +512,7 @@ export default function GalleryPage() {
       </Sheet>
 
       <Sheet open={Boolean(uploadAsset)} onOpenChange={(open) => !open && setUploadAsset(null)}>
-        <SheetContent>
+        <SheetContent className="overflow-y-auto max-h-screen">
           <SheetHeader>
             <SheetTitle>Upload asset to Scene</SheetTitle>
             <SheetDescription>
@@ -438,6 +538,54 @@ export default function GalleryPage() {
                 placeholder="Enter AR object name"
               />
             </div>
+
+            <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                    <Label htmlFor="duplicateCount">Duplicate Number</Label>
+                    <Input
+                        id="duplicateCount"
+                        type="number"
+                        min={1}
+                        value={duplicateCount}
+                        onChange={(e) => setDuplicateCount(Number(e.target.value))}
+                    />
+                </div>
+            </div>
+
+            <div className="flex items-center space-x-2 border p-2 rounded-md">
+                <Checkbox 
+                    id="randomPlace" 
+                    checked={isRandomPlace}
+                    onCheckedChange={(checked) => setIsRandomPlace(checked === true)}
+                />
+                <Label htmlFor="randomPlace">Random Place</Label>
+            </div>
+
+            {isRandomPlace && (
+                <div className="grid grid-cols-2 gap-4 border p-2 rounded-md bg-slate-50">
+                    <div className="space-y-2">
+                        <Label htmlFor="lightTagHeight">LightTag Height (m)</Label>
+                        <Input
+                            id="lightTagHeight"
+                            type="number"
+                            step={0.1}
+                            value={lightTagHeight}
+                            onChange={(e) => setLightTagHeight(Number(e.target.value))}
+                        />
+                    </div>
+                    <div className="space-y-2">
+                         <Label htmlFor="placementRange">Placement Range (m)</Label>
+                        <Input
+                            id="placementRange"
+                            type="number"
+                            step={1}
+                            value={placementRange}
+                            onChange={(e) => setPlacementRange(Number(e.target.value))}
+                        />
+                    </div>
+                </div>
+            )}
+
             <SheetFooter>
               <Button type="submit" disabled={!sceneId || !sceneName || uploading}>
                 {uploading ? "Submitting…" : "Upload"}

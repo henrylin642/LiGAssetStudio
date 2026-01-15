@@ -60,6 +60,37 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
   return NextResponse.json(upstreamBody ?? { ok: true }, { status: upstream.status });
 }
 
+export async function POST(request: NextRequest, context: { params: Promise<{ id: string }> }) {
+  const token = extractBearerToken(request);
+  if (!token) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  let body: unknown;
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON payload" }, { status: 400 });
+  }
+
+  const { id } = await context.params;
+  const upstream = await ligFetch(
+    `/api/v1/ar_objects/${id}`,
+    {
+      method: "POST",
+      body: JSON.stringify(body),
+    },
+    token,
+  );
+
+  const upstreamBody = await forwardJson(upstream);
+  if (!upstream.ok) {
+    return NextResponse.json(upstreamBody ?? { error: "Failed to update AR object" }, { status: upstream.status });
+  }
+
+  return NextResponse.json(upstreamBody ?? { ok: true }, { status: upstream.status });
+}
+
 export async function DELETE(request: NextRequest, context: { params: Promise<{ id: string }> }) {
   const token = extractBearerToken(request);
   if (!token) {
