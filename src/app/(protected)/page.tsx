@@ -352,6 +352,7 @@ export default function GalleryPage() {
             addLog(`Updating location to: X=${x.toFixed(2)}, Y=${y}, Z=${z.toFixed(2)}`);
 
             // Use PATCH with minimal payload (only location) to avoid overwriting other fields or sending invalid data
+            try {
                 const updateRes = await api(`/ar-objects/${createdObjectId}`, {
                     method: "PATCH",
                     body: JSON.stringify({ location: newLocation })
