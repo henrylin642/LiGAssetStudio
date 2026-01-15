@@ -418,8 +418,162 @@ export default function GalleryPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      {/* ... existing code ... */}
-      
+      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+        <div className="space-y-2">
+          <h1 className="text-2xl font-semibold text-slate-900">Gallery</h1>
+          <p className="text-sm text-slate-500">
+            Browse LIG assets and prepare batch jobs across {assetPage?.total ?? "…"} media files.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            variant="outline"
+            className="inline-flex items-center gap-2"
+            onClick={() => handleAssetUploadOpenChange(true)}
+          >
+            <Upload className="h-4 w-4" />
+            Upload asset
+          </Button>
+          <Button onClick={() => setDrawerOpen(true)} disabled={selected.length === 0}>
+            Batch actions ({selected.length})
+          </Button>
+        </div>
+      </div>
+
+      <TypeTabs value={type} onValueChange={(next) => setType(next)} />
+
+      <FilterBar
+        initialSearch={search}
+        onSearchChange={(value) => {
+          setSearch(value);
+          setPage(1);
+        }}
+        perPage={perPage}
+        onPerPageChange={(value) => {
+          setPerPage(value);
+          setPage(1);
+        }}
+      />
+
+      <div className="relative min-h-[200px]">
+        {assetsQuery.isFetching && !isLoading ? (
+          <div className="absolute inset-0 z-50 flex items-center justify-center bg-white/50 backdrop-blur-[1px]">
+            <div className="flex items-center gap-2 rounded-full bg-white px-4 py-2 shadow-lg ring-1 ring-slate-900/10">
+              <svg
+                className="h-4 w-4 animate-spin text-slate-500"
+                xmlns="http://www.w3.org/2000/svg"
+                fill="none"
+                viewBox="0 0 24 24"
+              >
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                <path
+                  className="opacity-75"
+                  fill="currentColor"
+                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                ></path>
+              </svg>
+              <span className="text-sm font-medium text-slate-700">Loading...</span>
+            </div>
+          </div>
+        ) : null}
+
+        {error ? <ErrorBanner message={error.message} /> : null}
+        {assetPage?.items?.length === 0 && !isLoading && !error ? (
+          <ErrorBanner message="找不到任何資產，可能是 API 返回空清單或發生 502 錯誤。" />
+        ) : null}
+
+        {isLoading ? (
+          <div className="flex h-40 items-center justify-center text-sm text-slate-500">Loading assets…</div>
+        ) : (
+          <AssetGrid
+            assets={assets}
+            selectedIds={selected}
+            onToggleAsset={toggleAsset}
+            onUploadFromCard={(asset) => {
+              setUploadAsset(asset);
+              setSceneName(asset.name);
+            }}
+          />
+        )}
+      </div>
+
+      <div className="flex items-center justify-between gap-2 border-t border-slate-200 pt-4 text-sm">
+        <span className="text-slate-500">
+          Page {page} of {totalPages}
+        </span>
+        <div className="flex gap-2">
+          <Button variant="outline" disabled={page <= 1} onClick={() => setPage((prev) => Math.max(1, prev - 1))}>
+            Previous
+          </Button>
+          <Button
+            variant="outline"
+            disabled={page >= totalPages}
+            onClick={() => setPage((prev) => Math.min(totalPages, prev + 1))}
+          >
+            Next
+          </Button>
+        </div>
+      </div>
+
+      <BatchDrawer
+        assetIds={selected}
+        open={drawerOpen}
+        onOpenChange={setDrawerOpen}
+        onCreateJob={handleCreateJob}
+        onUploadToScene={handleBatchUploadToScene}
+        scenes={scenesQuery.data ?? []}
+        scenesLoading={scenesQuery.isLoading}
+      />
+
+      <Sheet open={assetUploadOpen} onOpenChange={handleAssetUploadOpenChange}>
+        <SheetContent>
+          <SheetHeader>
+            <SheetTitle>Upload asset</SheetTitle>
+            <SheetDescription>將檔案上傳至 Gallery，系統會透過 LiG API 建立資產。</SheetDescription>
+          </SheetHeader>
+          <form className="flex flex-1 flex-col gap-4 py-4" onSubmit={handleAssetUploadSubmit}>
+            <div className="space-y-2">
+              <Label htmlFor="gallery-asset-file">檔案</Label>
+              <Input id="gallery-asset-file" type="file" multiple onChange={handleAssetFileChange} />
+              {assetUploadFiles.length > 0 ? (
+                <div className="space-y-1 text-xs text-slate-500">
+                  <p>
+                    {assetUploadFiles.length} 檔案 · {formatBytes(assetUploadTotalSize)}
+                  </p>
+                  <ul className="list-disc space-y-0.5 pl-4">
+                    {assetUploadFiles.slice(0, 5).map((file) => (
+                      <li key={`${file.name}-${file.size}`}>{file.name}</li>
+                    ))}
+                    {assetUploadFiles.length > 5 ? (
+                      <li>… 以及 {assetUploadFiles.length - 5} 個檔案</li>
+                    ) : null}
+                  </ul>
+                </div>
+              ) : (
+                <p className="text-xs text-slate-500">
+                  支援圖片、影音與 3D 模型（png/jpg/webp、mp4/webm、glb 等）。
+                </p>
+              )}
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="gallery-asset-tags">Tags（以逗號分隔，可留空）</Label>
+              <Input
+                id="gallery-asset-tags"
+                value={assetUploadTags}
+                onChange={(event) => setAssetUploadTags(event.target.value)}
+                placeholder="tag1,tag2"
+              />
+            </div>
+            {assetUploadError ? <p className="text-xs text-red-600">{assetUploadError}</p> : null}
+            <SheetFooter>
+              <Button type="submit" disabled={assetUploadFiles.length === 0 || assetUploadMutation.isPending}>
+                {assetUploadMutation.isPending ? "Uploading…" : "Upload"}
+              </Button>
+            </SheetFooter>
+          </form>
+        </SheetContent>
+      </Sheet>
+
       <Sheet open={Boolean(uploadAsset)} onOpenChange={(open) => !open && setUploadAsset(null)}>
         <SheetContent className="overflow-y-auto max-h-screen">
           <SheetHeader>
